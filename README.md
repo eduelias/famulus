@@ -62,6 +62,20 @@ Tailscale Funnel, or a reverse proxy), register it in your Meta app with your
 The full Meta walkthrough (app, test number, tokens, webhook) lives in
 [docs/setup-meta.md](docs/setup-meta.md).
 
+## Official plugins
+
+| Package | Adds | Gated actions |
+|---|---|---|
+| [famulus-google](https://github.com/eduelias/famulus-google) | Gmail: search, read, organize | sending mail |
+| [famulus-msgraph](https://github.com/eduelias/famulus-msgraph) | Outlook (personal MS account): search, read, move | sending mail |
+| [famulus-linkedin](https://github.com/eduelias/famulus-linkedin) | LinkedIn posting | every post |
+
+```bash
+pip install famulus-google famulus-msgraph famulus-linkedin
+```
+
+Each has its own one-time authorization step — see its README.
+
 ## Writing a plugin
 
 A plugin is a pip-installable package exposing an object in the
