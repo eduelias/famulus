@@ -1,0 +1,22 @@
+services:
+  famulus:
+    build: .
+    container_name: famulus
+    restart: unless-stopped
+    ports:
+      - "8090:8080"
+    env_file: .env
+    environment:
+      - DATA_DIR=/data
+    volumes:
+      - ./data:/data
+    depends_on:
+      - searxng
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: famulus-searxng
+    restart: unless-stopped
+    volumes:
+      - ./searxng:/etc/searxng
+    # no published ports: only famulus can reach it on the compose network
