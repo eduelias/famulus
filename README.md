@@ -71,7 +71,11 @@ The full Meta walkthrough (app, test number, tokens, webhook) lives in
 | [famulus-linkedin](https://github.com/eduelias/famulus-linkedin) | LinkedIn posting | every post |
 
 ```bash
-pip install famulus-google famulus-msgraph famulus-linkedin
+# not on PyPI yet — install from git
+pip install \
+  "git+https://github.com/eduelias/famulus-google" \
+  "git+https://github.com/eduelias/famulus-msgraph" \
+  "git+https://github.com/eduelias/famulus-linkedin"
 ```
 
 Each has its own one-time authorization step — see its README.
@@ -134,8 +138,9 @@ See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 - [ ] OpenAI-compatible LLM backends
 - [ ] Persistent conversation state (SQLite)
 - [ ] Media messages (voice note transcription, image understanding)
-- [ ] Official plugins: Gmail, Microsoft Graph (Outlook), LinkedIn,
-      Home Assistant
+- [x] Official plugins: Gmail, Microsoft Graph (Outlook), LinkedIn
+- [ ] Home Assistant plugin (device control + automation management)
+- [ ] Publish to PyPI (today: install from git)
 - [ ] Per-sender permission profiles
 
 ## License
