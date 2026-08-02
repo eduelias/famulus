@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"
+     role="img" aria-label="Du7 AI Assistant">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0C1712"/>
+      <stop offset="0.55" stop-color="#12281D"/>
+      <stop offset="1" stop-color="#1B3A28"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="200" y1="180" x2="850" y2="880" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4ADE80"/>
+      <stop offset="1" stop-color="#2FA45C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- full-bleed: WhatsApp crops to a circle, so nothing important near corners -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- speech bubble: the assistant lives in chat -->
+  <g transform="translate(512,486)">
+    <path d="M -258 -196
+             a 74 74 0 0 1 74 -74
+             h 368
+             a 74 74 0 0 1 74 74
+             v 300
+             a 74 74 0 0 1 -74 74
+             h -212
+             l -150 122
+             v -122
+             h -6
+             a 74 74 0 0 1 -74 -74
+             z"
+          fill="none" stroke="url(#edge)" stroke-width="34"
+          stroke-linejoin="round"/>
+  </g>
+
+  <!-- the du7 mark, reduced to what survives a 48px avatar -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-weight="700"
+     text-anchor="middle">
+    <text x="512" y="500" font-size="250" fill="#4ADE80">
+      <tspan fill="#7FCB9F">{</tspan><tspan fill="#FFFFFF">7</tspan><tspan fill="#7FCB9F">}</tspan>
+    </text>
+  </g>
+</svg>

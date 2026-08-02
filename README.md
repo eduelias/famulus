@@ -1,3 +1,5 @@
+<img src="assets/logo.svg" alt="" width="96" align="right">
+
 # famulus
 
 **A self-hosted personal AI assistant on WhatsApp — your models, your tools, your rules.**
