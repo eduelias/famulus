@@ -39,8 +39,9 @@ WhatsApp ⇄ Meta Cloud API ⇄ your webhook (famulus, FastAPI)
                                    │
               ┌────────────┬───────┴──────┬──────────────┐
           built-in:     built-in:      plugins:       plugins:
-          web search    weather        famulus-*      your own
-          (SearXNG)     (Open-Meteo)   (pip install)  (~50 lines)
+          web search    weather        mail · home    your own
+          (SearXNG)     (Open-Meteo)   automation ·   (~50 lines)
+                                       LinkedIn
 ```
 
 ## Quickstart
@@ -97,13 +98,15 @@ models choose tools less reliably than big ones — measured on a Raspberry Pi 5
 | [famulus-google](https://github.com/eduelias/famulus-google) | Gmail: search, read, organize | sending mail |
 | [famulus-msgraph](https://github.com/eduelias/famulus-msgraph) | Outlook (personal MS account): search, read, move | sending mail |
 | [famulus-linkedin](https://github.com/eduelias/famulus-linkedin) | LinkedIn posting | every post |
+| [famulus-homeassistant](https://github.com/eduelias/famulus-homeassistant) | Home Assistant: devices, music, automations | automation writes, locks/covers |
 
 ```bash
 # not on PyPI yet — install from git
 pip install \
   "git+https://github.com/eduelias/famulus-google" \
   "git+https://github.com/eduelias/famulus-msgraph" \
-  "git+https://github.com/eduelias/famulus-linkedin"
+  "git+https://github.com/eduelias/famulus-linkedin" \
+  "git+https://github.com/eduelias/famulus-homeassistant"
 ```
 
 Each has its own one-time authorization step — see its README.
@@ -167,8 +170,7 @@ See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 - [ ] OpenAI-compatible LLM backends
 - [ ] Persistent conversation state (SQLite)
 - [ ] Media messages (voice note transcription, image understanding)
-- [x] Official plugins: Gmail, Microsoft Graph (Outlook), LinkedIn
-- [ ] Home Assistant plugin (device control + automation management)
+- [x] Official plugins: Gmail, Microsoft Graph (Outlook), LinkedIn, Home Assistant
 - [ ] Publish to PyPI (today: install from git)
 - [ ] Per-sender permission profiles
 
