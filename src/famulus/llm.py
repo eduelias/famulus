@@ -31,7 +31,11 @@ class PendingAction:
 
 async def _post_chat(url: str, model: str, messages: list[dict],
                      tools: list[dict] | None) -> dict:
-    async with httpx.AsyncClient(timeout=config.LLM_TIMEOUT) as client:
+    # short connect timeout so failover is fast when a host is asleep and
+    # silently drops packets (a refused port fails instantly; a dropped one
+    # would otherwise hang for the full read timeout)
+    limits = httpx.Timeout(config.LLM_TIMEOUT, connect=config.LLM_CONNECT_TIMEOUT)
+    async with httpx.AsyncClient(timeout=limits) as client:
         r = await client.post(
             f"{url}/api/chat",
             json={"model": model, "messages": messages, "stream": False,

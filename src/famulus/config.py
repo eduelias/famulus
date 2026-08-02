@@ -6,6 +6,9 @@ MODEL_DEFAULT = os.environ.get("MODEL_DEFAULT", "qwen3:8b")
 # Optional second model for messages starting with "code:" (empty = disabled)
 MODEL_CODER = os.environ.get("MODEL_CODER", "")
 LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "300"))
+# keep this low: a sleeping host drops packets and would otherwise
+# stall the whole failover for the read timeout
+LLM_CONNECT_TIMEOUT = float(os.environ.get("LLM_CONNECT_TIMEOUT", "5"))
 
 # Optional failover chain, tried in order, e.g. a fast GPU box first and a
 # small always-on model on this machine as a backstop:

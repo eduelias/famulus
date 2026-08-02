@@ -75,8 +75,14 @@ If the GPU machine is asleep, unreachable, or its model is missing, the next
 backend answers instead. Only if *every* backend fails does the owner get a
 plain "I can't reach my language model right now" — never a stack trace.
 
-Note the small model still needs tool-calling support to use plugins; a 4B
-model works but chooses tools less reliably than an 8B one.
+Failover is fast: the connect timeout is 5s (`LLM_CONNECT_TIMEOUT`), because a
+*sleeping* host silently drops packets rather than refusing the connection and
+would otherwise stall for the full read timeout.
+
+The fallback model still needs tool-calling support to use plugins. Small
+models choose tools less reliably than big ones — measured on a Raspberry Pi 5
+(CPU only): `qwen3:1.7b` ≈ 7 tok/s and emits valid tool calls, while
+`qwen3:4b` ≈ 2.8 tok/s, which is too slow to be useful.
 
 > **Running Ollama on Windows?** If you start it from Task Scheduler, set the
 > task's *execution time limit* to unlimited. The default is 72 hours, after
