@@ -99,6 +99,7 @@ models choose tools less reliably than big ones — measured on a Raspberry Pi 5
 | [famulus-msgraph](https://github.com/eduelias/famulus-msgraph) | Outlook (personal MS account): search, read, move | sending mail |
 | [famulus-linkedin](https://github.com/eduelias/famulus-linkedin) | LinkedIn posting | every post |
 | [famulus-homeassistant](https://github.com/eduelias/famulus-homeassistant) | Home Assistant: devices, music, automations | automation writes, locks/covers |
+| [famulus-overseerr](https://github.com/eduelias/famulus-overseerr) | Overseerr/Plex: what's new, manage requests | requesting, approving |
 
 ```bash
 # not on PyPI yet — install from git
@@ -106,7 +107,8 @@ pip install \
   "git+https://github.com/eduelias/famulus-google" \
   "git+https://github.com/eduelias/famulus-msgraph" \
   "git+https://github.com/eduelias/famulus-linkedin" \
-  "git+https://github.com/eduelias/famulus-homeassistant"
+  "git+https://github.com/eduelias/famulus-homeassistant" \
+  "git+https://github.com/eduelias/famulus-overseerr"
 ```
 
 Each has its own one-time authorization step — see its README.
@@ -170,7 +172,7 @@ See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 - [ ] OpenAI-compatible LLM backends
 - [ ] Persistent conversation state (SQLite)
 - [ ] Media messages (voice note transcription, image understanding)
-- [x] Official plugins: Gmail, Microsoft Graph (Outlook), LinkedIn, Home Assistant
+- [x] Official plugins: Gmail, Microsoft Graph (Outlook), LinkedIn, Home Assistant, Overseerr
 - [ ] Publish to PyPI (today: install from git)
 - [ ] Per-sender permission profiles
 
