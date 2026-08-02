@@ -5,6 +5,25 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 MODEL_DEFAULT = os.environ.get("MODEL_DEFAULT", "qwen3:8b")
 # Optional second model for messages starting with "code:" (empty = disabled)
 MODEL_CODER = os.environ.get("MODEL_CODER", "")
+LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "300"))
+
+# Optional failover chain, tried in order, e.g. a fast GPU box first and a
+# small always-on model on this machine as a backstop:
+#   LLM_BACKENDS=http://192.168.1.50:11434|qwen3:8b,http://localhost:11434|qwen3:4b
+# Leave empty to just use OLLAMA_URL + MODEL_DEFAULT.
+LLM_BACKENDS = os.environ.get("LLM_BACKENDS", "")
+
+
+def llm_backends() -> list[tuple[str, str]]:
+    """[(base_url, model), ...] in priority order."""
+    out: list[tuple[str, str]] = []
+    for item in LLM_BACKENDS.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        url, _, model = item.partition("|")
+        out.append((url.strip().rstrip("/"), model.strip() or MODEL_DEFAULT))
+    return out or [(OLLAMA_URL.rstrip("/"), MODEL_DEFAULT)]
 
 # ---- WhatsApp Cloud API ----
 WA_TOKEN = os.environ.get("WA_TOKEN", "")

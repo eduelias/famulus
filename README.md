@@ -62,6 +62,28 @@ Tailscale Funnel, or a reverse proxy), register it in your Meta app with your
 The full Meta walkthrough (app, test number, tokens, webhook) lives in
 [docs/setup-meta.md](docs/setup-meta.md).
 
+## Model failover
+
+Point famulus at more than one Ollama server and it tries them in order — a
+fast GPU box first, a small always-on model as a backstop:
+
+```bash
+LLM_BACKENDS=http://192.168.1.50:11434|qwen3:8b,http://localhost:11434|qwen3:4b
+```
+
+If the GPU machine is asleep, unreachable, or its model is missing, the next
+backend answers instead. Only if *every* backend fails does the owner get a
+plain "I can't reach my language model right now" — never a stack trace.
+
+Note the small model still needs tool-calling support to use plugins; a 4B
+model works but chooses tools less reliably than an 8B one.
+
+> **Running Ollama on Windows?** If you start it from Task Scheduler, set the
+> task's *execution time limit* to unlimited. The default is 72 hours, after
+> which Windows silently kills the server — and an "at startup" trigger will
+> not restart it until the machine reboots. See
+> [docs/ollama-windows.md](docs/ollama-windows.md).
+
 ## Official plugins
 
 | Package | Adds | Gated actions |
@@ -135,6 +157,7 @@ See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 
 ## Roadmap
 
+- [x] Model failover across multiple Ollama backends
 - [ ] OpenAI-compatible LLM backends
 - [ ] Persistent conversation state (SQLite)
 - [ ] Media messages (voice note transcription, image understanding)

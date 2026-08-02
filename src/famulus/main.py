@@ -99,9 +99,20 @@ async def _handle(msg: dict) -> None:
         del history[1:-20]
     try:
         reply, action = await llm.run_agent(registry, history, text)
-    except Exception as e:
+    except llm.NoBackendAvailable as e:
+        # don't leak a stack trace to WhatsApp; the owner can't act on it
+        log.error("no LLM backend reachable: %s", e)
+        history.pop()  # the question was never answered; don't poison context
+        await wa.send_text(
+            sender,
+            "⚠️ I can't reach my language model right now, so I couldn't answer "
+            "that. Check that your LLM server is running, then try again.")
+        return
+    except Exception:
         log.exception("agent error")
-        await wa.send_text(sender, f"Error: {e}")
+        await wa.send_text(
+            sender, "⚠️ Something went wrong handling that message. "
+                    "The details are in my logs.")
         return
     if action:
         pending[sender] = action
