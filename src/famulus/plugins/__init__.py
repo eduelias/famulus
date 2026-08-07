@@ -34,6 +34,14 @@ class Registry:
         log.info("plugin loaded: %s (%d tools)", p.name, len(p.tools))
 
     @property
+    def document_handlers(self) -> list:
+        """Plugins that opted into raw document messages (optional capability:
+        ``wants_document(msg) -> bool`` and ``handle_document(msg) -> str``)."""
+        return [p for p in self.plugins.values()
+                if callable(getattr(p, "handle_document", None))
+                and callable(getattr(p, "wants_document", None))]
+
+    @property
     def tools(self) -> list[dict]:
         return [t for p in self.plugins.values() for t in p.tools
                 if self._tool_owner.get(t["function"]["name"]) is p]

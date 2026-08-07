@@ -65,14 +65,33 @@ async def receive(request: Request):
 
 
 async def _handle(msg: dict) -> None:
-    if msg.get("type") != "text":
-        return
     mid, sender = msg.get("id"), msg.get("from", "")
     if mid in seen_ids:  # Meta retries webhooks; dedupe
         return
     seen_ids.add(mid)
     if sender not in config.ALLOWED_WA_NUMBERS:
         log.warning("ignoring message from non-allowlisted %s", sender)
+        return
+    if msg.get("type") == "document":
+        for p in registry.document_handlers:
+            try:
+                if not p.wants_document(msg):
+                    continue
+            except Exception:
+                log.exception("wants_document failed in plugin %s", p.name)
+                continue
+            await wa.send_text(sender, "📄 Received — processing…")
+            try:
+                import asyncio
+                reply = await asyncio.to_thread(p.handle_document, msg)
+                if reply:
+                    await wa.send_text(sender, reply)
+            except Exception as e:
+                log.exception("document handler %s failed", p.name)
+                await wa.send_text(sender, f"⚠️ {p.name} could not process that file: {e}")
+            return
+        return
+    if msg.get("type") != "text":
         return
     text = msg["text"]["body"].strip()
 
