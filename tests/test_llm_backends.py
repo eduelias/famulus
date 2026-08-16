@@ -29,7 +29,7 @@ def test_chat_uses_second_backend_when_first_fails(monkeypatch):
     _backends(monkeypatch, "http://dead:11434|big,http://alive:11434|small")
     tried = []
 
-    async def fake_post(url, model, messages, tools):
+    async def fake_post(url, model, messages, tools, fmt=""):
         tried.append((url, model))
         if "dead" in url:
             raise ConnectionError("boom")
@@ -44,7 +44,7 @@ def test_chat_uses_second_backend_when_first_fails(monkeypatch):
 def test_raises_when_every_backend_fails(monkeypatch):
     _backends(monkeypatch, "http://a:11434|m1,http://b:11434|m2")
 
-    async def fake_post(url, model, messages, tools):
+    async def fake_post(url, model, messages, tools, fmt=""):
         raise ConnectionError("nope")
 
     monkeypatch.setattr(llm, "_post_chat", fake_post)
@@ -57,7 +57,7 @@ def test_model_override_applies_to_every_backend(monkeypatch):
     _backends(monkeypatch, "http://dead:11434|big,http://alive:11434|small")
     seen = []
 
-    async def fake_post(url, model, messages, tools):
+    async def fake_post(url, model, messages, tools, fmt=""):
         seen.append(model)
         if "dead" in url:
             raise ConnectionError("boom")

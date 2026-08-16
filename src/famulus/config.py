@@ -124,6 +124,13 @@ CONFIRM_WORDS = {w.strip() for w in os.environ.get(
 CANCEL_WORDS = {w.strip() for w in os.environ.get(
     "CANCEL_WORDS", "no,n,cancel").lower().split(",") if w.strip()}
 
+# ---- Tool routing ----
+# With many plugins a small model can't reliably pick one tool out of dozens, so
+# a cheap first call narrows the toolset to the relevant plugins. Only kicks in
+# past ROUTER_MIN_TOOLS (below that, the full set is fine).
+ROUTER_ENABLED = os.environ.get("FAMULUS_ROUTER", "on").lower() != "off"
+ROUTER_MIN_TOOLS = int(os.environ.get("FAMULUS_ROUTER_MIN_TOOLS", "18"))
+
 # ---- Built-in tools ----
 SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://searxng:8080")
 

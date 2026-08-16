@@ -46,6 +46,26 @@ class Registry:
         return [t for p in self.plugins.values() for t in p.tools
                 if self._tool_owner.get(t["function"]["name"]) is p]
 
+    def _own_tool_names(self, p) -> list[str]:
+        return [t["function"]["name"] for t in p.tools
+                if self._tool_owner.get(t["function"]["name"]) is p]
+
+    def plugin_catalog(self) -> dict[str, list[str]]:
+        """{plugin_name: [tool_names]} — the menu the router chooses from.
+        Tool names alone route well (qbt_stats→torrent, ha_*→homeassistant)."""
+        out: dict[str, list[str]] = {}
+        for name, p in self.plugins.items():
+            names = self._own_tool_names(p)
+            if names:
+                out[name] = names
+        return out
+
+    def tools_for(self, plugin_names) -> list[dict]:
+        """Tool specs owned by the named plugins (for the narrowed agent turn)."""
+        want = set(plugin_names)
+        return [t for p in self.plugins.values() if p.name in want
+                for t in p.tools if self._tool_owner.get(t["function"]["name"]) is p]
+
     def _owner(self, tool: str):
         p = self._tool_owner.get(tool)
         if p is None:
