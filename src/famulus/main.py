@@ -114,17 +114,26 @@ async def _handle(msg: dict) -> None:
                 sender, "Reply YES to execute or NO to cancel:\n\n" + action.description)
         return
 
-    # Deterministic owner fast-path for allowlist management — a rare, high-value
-    # action the small model fumbles when it has dozens of tools to choose from.
+    # Deterministic owner fast-path for allowlist + access management — rare,
+    # high-value actions the small model fumbles among dozens of tools.
     if config.is_owner(sender):
         intent = admin.parse_admin_intent(text)
-        if intent and intent["action"] == "list":
-            result = registry.execute("allow_list", {})
-            await wa.send_text(sender, f"Allowed users:\n{result}")
-            return
-        if intent and intent["action"] in ("add", "remove"):
-            tool = "allow_add" if intent["action"] == "add" else "allow_remove"
-            args = {"number": intent["number"]}
+        if intent:
+            act = intent["action"]
+            if act == "list":
+                await wa.send_text(sender, f"Allowed users:\n{registry.execute('allow_list', {})}")
+                return
+            if act == "access":
+                await wa.send_text(
+                    sender, f"{registry.execute('show_access', {'number': intent['number']})}")
+                return
+            if act == "grant":
+                tool = "grant_access"
+                args = {"number": intent["number"], "domains": ", ".join(intent["domains"])}
+            elif act == "add":
+                tool, args = "allow_add", {"number": intent["number"]}
+            else:  # remove
+                tool, args = "allow_remove", {"number": intent["number"]}
             if intent.get("label"):
                 args["label"] = intent["label"]
             pending[sender] = llm.PendingAction(tool, args, registry.describe(tool, args))

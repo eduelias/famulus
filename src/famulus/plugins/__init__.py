@@ -78,8 +78,17 @@ class Registry:
     def describe(self, tool: str, args: dict) -> str:
         return self._owner(tool).describe(tool, args)
 
+    def plugin_of(self, tool: str) -> str:
+        return self._owner(tool).name
+
     def execute(self, tool: str, args: dict) -> object:
-        return self._owner(tool).execute(tool, args)
+        p = self._owner(tool)
+        # defense in depth: re-check access at execution time (covers the gated
+        # confirm path and any bug that let a disallowed tool through).
+        from .. import access, context
+        if not access.user_allowed(context.current_user(), p.name):
+            raise ValueError(f"you don't have access to {p.name} tools")
+        return p.execute(tool, args)
 
 
 def load_registry() -> Registry:

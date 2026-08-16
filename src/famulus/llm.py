@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from . import config
+from . import access, config, context
 from .plugins import Registry
 
 MAX_TOOL_ROUNDS = 6
@@ -69,9 +69,14 @@ _ROUTER_SYS = (
     "list only for pure small talk that needs no tools.")
 
 
-async def _route(registry: Registry, user_text: str) -> set[str] | None:
-    """Pick the relevant plugins for this message, or None to use all tools."""
+async def _route(registry: Registry, user_text: str,
+                 allowed: set[str] | None = None) -> set[str] | None:
+    """Pick the relevant plugins for this message, or None to use all tools.
+
+    `allowed` restricts routing to the plugins the current user may use."""
     catalog = registry.plugin_catalog()
+    if allowed is not None:
+        catalog = {k: v for k, v in catalog.items() if k in allowed}
     if not catalog:
         return None
     menu = "\n".join(f"- {name}: {', '.join(tools[:10])}"
@@ -113,15 +118,19 @@ async def run_agent(registry: Registry, history: list[dict],
         history.append(msg)
         return msg.get("content", ""), None
 
-    # Two-stage routing: with many tools, a small model can't reliably pick one,
-    # so narrow to the plugins this message needs before the real turn. Falls
-    # back to all tools if routing is off, the set is already small, or the
-    # router is unsure — so it never does worse than the un-routed behaviour.
-    tools = registry.tools
+    # Access control: restrict to the domains this user may use, so a restricted
+    # user's model never even sees tools outside their grants.
+    allowed = access.allowed_plugins(context.current_user(), registry.plugins.keys())
+    tools = registry.tools_for(allowed)
+
+    # Two-stage routing within the allowed set: with many tools a small model
+    # can't reliably pick one, so narrow to the plugins this message needs before
+    # the real turn. Falls back to the user's full allowed set if routing is off,
+    # the set is already small, or the router is unsure.
     if config.ROUTER_ENABLED and len(tools) > config.ROUTER_MIN_TOOLS:
-        chosen = await _route(registry, user_text)
+        chosen = await _route(registry, user_text, allowed)
         if chosen:
-            narrowed = registry.tools_for(chosen)
+            narrowed = registry.tools_for(chosen & allowed)
             if narrowed:
                 log.info("router: %s → %d/%d tools", sorted(chosen), len(narrowed), len(tools))
                 tools = narrowed
