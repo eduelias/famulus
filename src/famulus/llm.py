@@ -63,9 +63,10 @@ async def _chat(messages: list[dict], tools: list[dict] | None,
 _ROUTER_SYS = (
     "You are a router. Given capability categories (each with its tool names) and a "
     "user message, decide which categories are needed to handle it. Return JSON exactly "
-    'as {"plugins": ["name", ...]} using only names from the list. Include EVERY category '
-    "that might be needed (prefer including over excluding); use an empty list only for "
-    "pure small talk that needs no tools.")
+    'as {"plugins": ["name", ...]} where each name is a CATEGORY name — the identifier '
+    'before the colon (e.g. "tutor", "torrent"), NOT an individual tool name. Include '
+    "EVERY category that might be needed (prefer including over excluding); use an empty "
+    "list only for pure small talk that needs no tools.")
 
 
 async def _route(registry: Registry, user_text: str) -> set[str] | None:
@@ -87,7 +88,15 @@ async def _route(registry: Registry, user_text: str) -> set[str] | None:
     names = data.get("plugins") if isinstance(data, dict) else data
     if not isinstance(names, list):
         return None
-    chosen = {n for n in names if n in catalog}
+    # small models often return tool names instead of the category — resolve
+    # either form back to the owning plugin.
+    tool_to_plugin = {t: name for name, tools in catalog.items() for t in tools}
+    chosen = set()
+    for n in names:
+        if n in catalog:
+            chosen.add(n)
+        elif n in tool_to_plugin:
+            chosen.add(tool_to_plugin[n])
     return chosen or None
 
 

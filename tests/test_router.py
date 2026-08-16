@@ -89,3 +89,13 @@ def test_run_agent_narrows_tools(monkeypatch):
                                               "how's my seedbox"))
     assert reply == "ok" and action is None
     assert set(seen["tools"]) == {"qbt_stats", "tl_ratio"}   # weather was excluded
+
+
+def test_route_resolves_tool_names_to_plugins(monkeypatch):
+    """The 8B often returns tool names, not category names — resolve them."""
+    r = _reg()
+
+    async def toolnames(messages, tools=None, model_override="", fmt=""):
+        return {"content": '{"plugins": ["tl_ratio", "qbt_stats"]}'}
+    monkeypatch.setattr(llm, "_chat", toolnames)
+    assert asyncio.run(llm._route(r, "seedbox?")) == {"torrent"}
