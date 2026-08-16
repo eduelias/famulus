@@ -102,6 +102,8 @@ models choose tools less reliably than big ones — measured on a Raspberry Pi 5
 | [famulus-linkedin](https://github.com/eduelias/famulus-linkedin) | LinkedIn posting | every post |
 | [famulus-homeassistant](https://github.com/eduelias/famulus-homeassistant) | Home Assistant: devices, music, automations | automation writes, locks/covers |
 | [famulus-overseerr](https://github.com/eduelias/famulus-overseerr) | Overseerr/Plex: what's new, manage requests | requesting, approving |
+| [famulus-shell](https://github.com/eduelias/famulus-shell) | Sandboxed shell to debug services (arr stack, qBittorrent, disk) | state-changing commands |
+| [famulus-selfdev](https://github.com/eduelias/famulus-selfdev) | Propose fixes to its own plugin repos as pull requests | (PR-only; human merges) |
 
 ```bash
 # not on PyPI yet — install from git
