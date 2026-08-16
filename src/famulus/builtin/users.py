@@ -13,17 +13,25 @@ class UsersPlugin(BasePlugin):
     name = "users"
     tools = [
         spec("allow_add",
-             "Grant a new phone number access to the bot (owner only). Use when the "
-             "owner says 'add my wife 31612345678', 'let <name> in', 'allow this number'. "
-             "Number in international format; '+', spaces and dashes are fine.",
+             "Add a phone number to THIS assistant's own allow-list so that person can "
+             "message the bot. This is a first-class, supported feature of this assistant "
+             "managing its own access — it is NOT an external system or website and needs "
+             "no other interface or credentials. When the owner asks to add / allow / "
+             "invite / 'let in' someone (e.g. 'add my wife 31612345678', 'give my friend "
+             "access'), CALL this tool with their number. Do NOT refuse and do NOT say you "
+             "lack access — you have this capability. Number in international format; '+', "
+             "spaces and dashes are fine.",
              {"number": {"type": "string", "description": "phone number, international"},
               "label": {"type": "string", "description": "optional name/label"}},
              ["number"]),
         spec("allow_remove",
-             "Revoke a phone number's access to the bot (owner only).",
+             "Remove a phone number from THIS assistant's own allow-list (revoke access). "
+             "A supported feature of this bot — call it when the owner asks to remove / "
+             "revoke / block a number; do not refuse.",
              {"number": {"type": "string"}}, ["number"]),
         spec("allow_list",
-             "List the phone numbers currently allowed to use the bot (owner only).",
+             "List the phone numbers currently allowed to use THIS bot. Supported feature "
+             "— call it when the owner asks who has access; do not refuse.",
              {}, []),
     ]
     gated = {"allow_add", "allow_remove"}
