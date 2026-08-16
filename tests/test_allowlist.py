@@ -49,3 +49,16 @@ def test_users_plugin_owner_only(cfg, monkeypatch):
     assert r["added"] == "31600000009"
     assert "31600000009" in cfg.allowed_numbers()
     context.set_current_user("")
+
+
+def test_parse_admin_intent():
+    from famulus.admin import parse_admin_intent as pa
+    r = pa("add my wife to the bot, her number is +31 6 2468 1357")
+    assert r == {"action": "add", "number": "31624681357", "label": "wife"}
+    assert pa("allow 31633334444")["action"] == "add"
+    assert pa("remove 31633334444 please")["action"] == "remove"
+    assert pa("who can use the bot?")["action"] == "list"
+    assert pa("list allowed users") == {"action": "list"}
+    # no phone number → not an add/remove (don't hijack normal chat)
+    assert pa("add milk to my shopping list") is None
+    assert pa("what's the weather tomorrow") is None

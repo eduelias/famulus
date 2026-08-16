@@ -5,7 +5,7 @@ import logging
 
 from fastapi import FastAPI, Request, Response
 
-from . import config, context, llm, wa
+from . import admin, config, context, llm, wa
 from .plugins import load_registry
 
 logging.basicConfig(level=logging.INFO)
@@ -113,6 +113,26 @@ async def _handle(msg: dict) -> None:
             await wa.send_text(
                 sender, "Reply YES to execute or NO to cancel:\n\n" + action.description)
         return
+
+    # Deterministic owner fast-path for allowlist management — a rare, high-value
+    # action the small model fumbles when it has dozens of tools to choose from.
+    if config.is_owner(sender):
+        intent = admin.parse_admin_intent(text)
+        if intent and intent["action"] == "list":
+            result = registry.execute("allow_list", {})
+            await wa.send_text(sender, f"Allowed users:\n{result}")
+            return
+        if intent and intent["action"] in ("add", "remove"):
+            tool = "allow_add" if intent["action"] == "add" else "allow_remove"
+            args = {"number": intent["number"]}
+            if intent.get("label"):
+                args["label"] = intent["label"]
+            pending[sender] = llm.PendingAction(tool, args, registry.describe(tool, args))
+            await wa.send_text(
+                sender,
+                "⚠️ Confirmation needed — reply YES to execute, NO to cancel:\n\n"
+                + registry.describe(tool, args))
+            return
 
     history = histories.setdefault(
         sender, [{"role": "system", "content": config.SYSTEM_PROMPT}])
