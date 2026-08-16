@@ -39,10 +39,84 @@ WA_APP_SECRET = os.environ.get("WA_APP_SECRET", "")
 WA_ALLOW_UNSIGNED = os.environ.get("WA_ALLOW_UNSIGNED", "").lower() == "true"
 
 # Comma-separated E.164 numbers (no '+') allowed to talk to the bot.
-# Empty = the bot answers nobody.
+# Empty = the bot answers nobody. This is the *static seed*; the owner can add
+# more at runtime (persisted to ALLOWLIST_FILE) — see allowed_numbers().
 ALLOWED_WA_NUMBERS = [
     n.strip() for n in os.environ.get("ALLOWED_WA_NUMBERS", "").split(",") if n.strip()
 ]
+
+# The owner — the only user allowed to manage the allowlist. Defaults to the
+# first static allowed number.
+OWNER_WA_NUMBER = (os.environ.get("OWNER_WA_NUMBER", "").strip()
+                   or (ALLOWED_WA_NUMBERS[0] if ALLOWED_WA_NUMBERS else ""))
+
+# Runtime-added numbers live here (JSON: {"<number>": "<label>"}).
+ALLOWLIST_FILE = os.environ.get(
+    "ALLOWLIST_FILE", os.path.join(os.environ.get("DATA_DIR", "/data"), "allowed_numbers.json"))
+
+
+def _norm_number(number: str) -> str:
+    """E.164 digits only — strip '+', spaces, dashes so lookups always match."""
+    return "".join(c for c in (number or "") if c.isdigit())
+
+
+def _load_allowlist_file() -> dict:
+    import json
+    try:
+        with open(ALLOWLIST_FILE) as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def allowed_numbers() -> set[str]:
+    """Everyone allowed to talk to the bot: static env seed ∪ runtime file."""
+    return {_norm_number(n) for n in ALLOWED_WA_NUMBERS} | {
+        _norm_number(n) for n in _load_allowlist_file()}
+
+
+def is_owner(number: str) -> bool:
+    return bool(OWNER_WA_NUMBER) and _norm_number(number) == _norm_number(OWNER_WA_NUMBER)
+
+
+def add_allowed(number: str, label: str = "") -> str:
+    """Persist a new allowed number. Returns the normalized number."""
+    import json
+    num = _norm_number(number)
+    if not num:
+        raise ValueError("no digits in that number")
+    d = _load_allowlist_file()
+    d[num] = label.strip() or d.get(num, "")
+    os.makedirs(os.path.dirname(ALLOWLIST_FILE), exist_ok=True)
+    tmp = ALLOWLIST_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=1)
+    os.replace(tmp, ALLOWLIST_FILE)
+    return num
+
+
+def remove_allowed(number: str) -> bool:
+    """Remove a runtime-added number. Returns True if it was present. The env
+    seed (ALLOWED_WA_NUMBERS) cannot be removed at runtime."""
+    import json
+    num = _norm_number(number)
+    d = _load_allowlist_file()
+    if num not in d:
+        return False
+    del d[num]
+    tmp = ALLOWLIST_FILE + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=1)
+    os.replace(tmp, ALLOWLIST_FILE)
+    return True
+
+
+def list_allowed() -> dict:
+    """number → label, for the whole allowlist (env seed shown with a marker)."""
+    out = {_norm_number(n): "(env seed)" for n in ALLOWED_WA_NUMBERS}
+    out.update({_norm_number(n): (lbl or "") for n, lbl in _load_allowlist_file().items()})
+    return out
 
 # Confirmation vocabulary for gated actions (comma-separated, lowercase).
 CONFIRM_WORDS = {w.strip() for w in os.environ.get(

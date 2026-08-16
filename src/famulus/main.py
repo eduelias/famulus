@@ -5,7 +5,7 @@ import logging
 
 from fastapi import FastAPI, Request, Response
 
-from . import config, llm, wa
+from . import config, context, llm, wa
 from .plugins import load_registry
 
 logging.basicConfig(level=logging.INFO)
@@ -69,9 +69,11 @@ async def _handle(msg: dict) -> None:
     if mid in seen_ids:  # Meta retries webhooks; dedupe
         return
     seen_ids.add(mid)
-    if sender not in config.ALLOWED_WA_NUMBERS:
+    if config._norm_number(sender) not in config.allowed_numbers():
         log.warning("ignoring message from non-allowlisted %s", sender)
         return
+    # expose the sender to plugins (per-user state, owner checks) for this message
+    context.set_current_user(config._norm_number(sender))
     if msg.get("type") == "document":
         for p in registry.document_handlers:
             try:
