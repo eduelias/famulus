@@ -53,14 +53,29 @@ async def _post_chat(url: str, model: str, messages: list[dict],
 
 async def _chat(messages: list[dict], tools: list[dict] | None,
                 model_override: str = "", fmt: str = "") -> dict:
-    """Try each backend in order; return the first successful reply."""
+    """Try each backend in order; return the first successful reply.
+
+    With a ``model_override`` (a persona's preferred model) it's tried on every
+    backend first, then we fall back to each backend's own default model — so the
+    preferred model is used where it exists but a host that lacks it (e.g. the
+    small always-on backstop) still answers instead of failing the whole turn."""
     errors = []
-    for url, model in config.llm_backends():
-        try:
-            return await _post_chat(url, model_override or model, messages, tools, fmt)
-        except Exception as e:  # connect error, timeout, 404 model missing, ...
-            errors.append(f"{url} ({model}): {type(e).__name__}")
-            log.warning("LLM backend %s failed (%s) — trying next", url, type(e).__name__)
+    backends = config.llm_backends()
+    # first pass: the preferred model everywhere; second pass: backend defaults
+    passes = [model_override, ""] if model_override else [""]
+    tried: set[tuple[str, str]] = set()
+    for pref in passes:
+        for url, model in backends:
+            m = pref or model
+            if (url, m) in tried:
+                continue
+            tried.add((url, m))
+            try:
+                return await _post_chat(url, m, messages, tools, fmt)
+            except Exception as e:  # connect error, timeout, 404 model missing, ...
+                errors.append(f"{url} ({m}): {type(e).__name__}")
+                log.warning("LLM backend %s model %s failed (%s) — trying next",
+                            url, m, type(e).__name__)
     raise NoBackendAvailable("; ".join(errors))
 
 
@@ -174,15 +189,20 @@ async def run_agent(registry: Registry, history: list[dict],
             log.info("router: primary=%s (was %s) tools=%d/%d", primary, was or "-",
                      len(tools), len(registry.tools_for(allowed)))
 
-    # compose this turn's system prompt: safety base + primary persona + its memory.
+    # compose this turn's system prompt: safety base + primary persona + its memory,
+    # and answer on the persona's preferred model if it declares one.
     sys = config.SYSTEM_PROMPT
+    model_override = ""
     if primary:
         persona = registry.persona_of(primary)
         ctx = registry.context_of(primary, user, history)  # history: start vs continue
+        model_override = registry.model_of(primary)
         if persona:
             sys += "\n\n# Active specialist\n" + persona
         if ctx:
             sys += "\n\n# Context for this conversation\n" + ctx
+        if model_override:
+            log.info("router: primary=%s using model %s", primary, model_override)
     if history and history[0].get("role") == "system":
         history[0]["content"] = sys
     else:
@@ -190,7 +210,7 @@ async def run_agent(registry: Registry, history: list[dict],
 
     history.append({"role": "user", "content": user_text})
     for _ in range(MAX_TOOL_ROUNDS):
-        msg = await _chat(history, tools=tools)
+        msg = await _chat(history, tools=tools, model_override=model_override)
         history.append(msg)
         calls = msg.get("tool_calls") or []
         if not calls:

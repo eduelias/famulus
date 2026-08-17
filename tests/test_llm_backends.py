@@ -66,3 +66,23 @@ def test_model_override_applies_to_every_backend(monkeypatch):
     monkeypatch.setattr(llm, "_post_chat", fake_post)
     asyncio.run(llm._chat([], None, model_override="coder:7b"))
     assert seen == ["coder:7b", "coder:7b"]
+
+
+def test_model_override_falls_back_to_backend_default(monkeypatch):
+    """A persona's preferred model is tried everywhere first; a backend that
+    lacks it (404) still answers on its own default rather than failing."""
+    _backends(monkeypatch, "http://gpu:11434|big,http://pi:11434|small")
+    seen = []
+
+    async def fake_post(url, model, messages, tools, fmt=""):
+        seen.append((url, model))
+        if model == "llama3.1:8b":       # not pulled on either host here
+            raise RuntimeError("404 model not found")
+        return {"content": "ok from " + model}
+
+    monkeypatch.setattr(llm, "_post_chat", fake_post)
+    msg = asyncio.run(llm._chat([], None, model_override="llama3.1:8b"))
+    assert msg["content"] == "ok from big"        # fell back to gpu's default
+    assert seen == [("http://gpu:11434", "llama3.1:8b"),   # preferred, both hosts
+                    ("http://pi:11434", "llama3.1:8b"),
+                    ("http://gpu:11434", "big")]           # then defaults

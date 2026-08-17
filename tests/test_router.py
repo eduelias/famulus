@@ -145,6 +145,64 @@ def test_persona_and_context_injected_into_system(monkeypatch):
     assert seen["tools"] == ["tutor_lesson"]
 
 
+class _Coach(BasePlugin):
+    name = "tutor"
+    persona = "You are a warm Dutch tutor."
+    model = "llama3.1:8b"          # a Dutch-strong model just for this domain
+    tools = [spec("tutor_lesson", "next lesson", {}, [])]
+
+    def execute(self, tool, args):
+        return "les"
+
+
+def test_registry_model_of():
+    r = Registry([_Coach(), _Weather()])
+    assert r.model_of("tutor") == "llama3.1:8b"
+    assert r.model_of("weather") == ""          # no preferred model declared
+    assert r.model_of("nope") == ""
+
+
+def test_persona_model_used_for_primary(monkeypatch):
+    """When the router makes the tutor primary, the agent turn runs on the
+    tutor's preferred model; other domains keep the base model."""
+    r = Registry([_Coach(), _Weather()])
+    monkeypatch.setattr("famulus.config.ROUTER_ENABLED", True)
+    monkeypatch.setattr("famulus.config.ROUTER_MIN_TOOLS", 1)
+    monkeypatch.setattr("famulus.context.current_user", lambda: "u9")
+    llm._last_primary.pop("u9", None)
+    seen = {}
+
+    async def fake_chat(messages, tools=None, model_override="", fmt=""):
+        if fmt == "json":
+            return {"content": '{"plugins": ["tutor"]}'}
+        seen["model"] = model_override
+        return {"content": "hoi"}
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    asyncio.run(llm.run_agent(r, [{"role": "system", "content": "base"}],
+                              "leer me Nederlands"))
+    assert seen["model"] == "llama3.1:8b"
+
+
+def test_no_persona_model_leaves_base_model(monkeypatch):
+    r = Registry([_Weather(), _Torrent()])
+    monkeypatch.setattr("famulus.config.ROUTER_ENABLED", True)
+    monkeypatch.setattr("famulus.config.ROUTER_MIN_TOOLS", 1)
+    monkeypatch.setattr("famulus.context.current_user", lambda: "u9")
+    llm._last_primary.pop("u9", None)
+    seen = {}
+
+    async def fake_chat(messages, tools=None, model_override="", fmt=""):
+        if fmt == "json":
+            return {"content": '{"plugins": ["torrent"]}'}
+        seen["model"] = model_override
+        return {"content": "ok"}
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    asyncio.run(llm.run_agent(r, [{"role": "system", "content": "base"}], "ratio?"))
+    assert seen["model"] == ""          # torrent declares no model → base chain
+
+
 def test_recent_context_formats_last_turns():
     hist = [{"role": "system", "content": "s"},
             {"role": "user", "content": "leer me Nederlands"},

@@ -55,9 +55,14 @@ class BasePlugin:
         (e.g. the Dutch tutor). Empty = no special persona.
       - ``context(user)``: dynamic memory/params to inject for this turn (the
         learner's level and current lesson, the seedbox's ratio, …). Empty = none.
+      - ``model``: a preferred LLM for this domain, used only when the router makes
+        this plugin the turn's primary (e.g. a Dutch-strong model for the tutor).
+        Empty = use the normal backend chain. It's tried first across the backends
+        and falls back to each backend's default model, so it never breaks failover.
     When the router picks this plugin as the turn's primary domain, the core
-    composes: base safety rules + persona + context, and exposes this domain's
-    tools. Personas augment the base rules; they never replace the safety/gating.
+    composes: base safety rules + persona + context, exposes this domain's tools,
+    and answers on ``model`` if set. Personas augment the base rules; they never
+    replace the safety/gating.
     """
 
     api_version = PLUGIN_API_VERSION
@@ -65,6 +70,7 @@ class BasePlugin:
     tools: list[dict] = []
     gated: set[str] = set()
     persona: str = ""
+    model: str = ""
 
     def context(self, user: str, history: list | None = None) -> str:
         """Per-user memory/params to inject when this plugin is the primary.

@@ -85,6 +85,11 @@ class Registry:
         p = self.plugins.get(name)
         return getattr(p, "persona", "") or "" if p else ""
 
+    def model_of(self, name: str) -> str:
+        """The plugin's preferred LLM (used when it's the turn's primary), or ""."""
+        p = self.plugins.get(name)
+        return getattr(p, "model", "") or "" if p else ""
+
     def context_of(self, name: str, user: str, history: list | None = None) -> str:
         p = self.plugins.get(name)
         if p is None or not callable(getattr(p, "context", None)):
