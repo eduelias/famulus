@@ -45,7 +45,7 @@ def test_route_picks_subset(monkeypatch):
 
     monkeypatch.setattr(llm, "_chat", fake_chat)
     chosen = asyncio.run(llm._route(r, "what's my seedbox ratio"))
-    assert chosen == {"torrent"}
+    assert chosen == ["torrent"]
 
 
 def test_route_drops_unknown_and_empty(monkeypatch):
@@ -98,4 +98,48 @@ def test_route_resolves_tool_names_to_plugins(monkeypatch):
     async def toolnames(messages, tools=None, model_override="", fmt=""):
         return {"content": '{"plugins": ["tl_ratio", "qbt_stats"]}'}
     monkeypatch.setattr(llm, "_chat", toolnames)
-    assert asyncio.run(llm._route(r, "seedbox?")) == {"torrent"}
+    assert asyncio.run(llm._route(r, "seedbox?")) == ["torrent"]
+
+
+class _Tutor(BasePlugin):
+    name = "tutor"
+    persona = "You are a warm Dutch tutor. Always reply in simple Dutch."
+    tools = [spec("tutor_lesson", "next lesson", {}, [])]
+
+    def context(self, user):
+        return f"Learner {user}: level A2, weak on word order."
+
+    def execute(self, tool, args):
+        return "les"
+
+
+def test_registry_persona_and_context():
+    r = Registry([_Tutor(), _Weather()])
+    assert "Dutch tutor" in r.persona_of("tutor")
+    assert r.persona_of("weather") == ""            # no persona declared
+    assert "level A2" in r.context_of("tutor", "31600000002")
+    assert r.context_of("weather", "x") == ""
+
+
+def test_persona_and_context_injected_into_system(monkeypatch):
+    r = Registry([_Tutor(), _Weather()])
+    monkeypatch.setattr("famulus.config.ROUTER_ENABLED", True)
+    monkeypatch.setattr("famulus.config.ROUTER_MIN_TOOLS", 1)
+    monkeypatch.setattr("famulus.context.current_user", lambda: "31600000002")
+    seen = {}
+
+    async def fake_chat(messages, tools=None, model_override="", fmt=""):
+        if fmt == "json":
+            return {"content": '{"plugins": ["tutor"]}'}
+        seen["system"] = messages[0]["content"]
+        seen["tools"] = [t["function"]["name"] for t in (tools or [])]
+        return {"content": "hoi"}
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    reply, _ = asyncio.run(llm.run_agent(r, [{"role": "system", "content": "base"}], "leer me Nederlands"))
+    assert reply == "hoi"
+    # the tutor persona + its per-user memory are in the turn's system prompt
+    assert "Dutch tutor" in seen["system"]
+    assert "level A2, weak on word order" in seen["system"]
+    # and only the tutor's tools were exposed
+    assert seen["tools"] == ["tutor_lesson"]

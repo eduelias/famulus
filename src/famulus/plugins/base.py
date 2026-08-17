@@ -48,12 +48,27 @@ class Plugin(Protocol):
 
 
 class BasePlugin:
-    """Convenience base: subclass, set name/tools/gated, implement execute."""
+    """Convenience base: subclass, set name/tools/gated, implement execute.
+
+    Optional persona-router hooks:
+      - ``persona``: a system-prompt fragment giving this domain its voice/behaviour
+        (e.g. the Dutch tutor). Empty = no special persona.
+      - ``context(user)``: dynamic memory/params to inject for this turn (the
+        learner's level and current lesson, the seedbox's ratio, …). Empty = none.
+    When the router picks this plugin as the turn's primary domain, the core
+    composes: base safety rules + persona + context, and exposes this domain's
+    tools. Personas augment the base rules; they never replace the safety/gating.
+    """
 
     api_version = PLUGIN_API_VERSION
     name = "unnamed"
     tools: list[dict] = []
     gated: set[str] = set()
+    persona: str = ""
+
+    def context(self, user: str) -> str:
+        """Per-user memory/params to inject when this plugin is the primary."""
+        return ""
 
     def is_gated(self, tool: str, args: dict) -> bool:
         return tool in self.gated

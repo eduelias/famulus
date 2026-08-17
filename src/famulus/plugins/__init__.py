@@ -81,6 +81,20 @@ class Registry:
     def plugin_of(self, tool: str) -> str:
         return self._owner(tool).name
 
+    def persona_of(self, name: str) -> str:
+        p = self.plugins.get(name)
+        return getattr(p, "persona", "") or "" if p else ""
+
+    def context_of(self, name: str, user: str) -> str:
+        p = self.plugins.get(name)
+        if p is None or not callable(getattr(p, "context", None)):
+            return ""
+        try:
+            return p.context(user) or ""
+        except Exception:
+            log.exception("context() failed in plugin %s", name)
+            return ""
+
     def execute(self, tool: str, args: dict) -> object:
         p = self._owner(tool)
         # defense in depth: re-check access at execution time (covers the gated

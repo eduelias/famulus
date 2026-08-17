@@ -70,8 +70,8 @@ _ROUTER_SYS = (
 
 
 async def _route(registry: Registry, user_text: str,
-                 allowed: set[str] | None = None) -> set[str] | None:
-    """Pick the relevant plugins for this message, or None to use all tools.
+                 allowed: set[str] | None = None) -> list[str] | None:
+    """Ordered relevant plugins (first = primary), or None to use all tools.
 
     `allowed` restricts routing to the plugins the current user may use."""
     catalog = registry.plugin_catalog()
@@ -94,14 +94,14 @@ async def _route(registry: Registry, user_text: str,
     if not isinstance(names, list):
         return None
     # small models often return tool names instead of the category — resolve
-    # either form back to the owning plugin.
+    # either form back to the owning plugin. Preserve order: the first is the
+    # primary domain (drives the persona), the rest add their tools.
     tool_to_plugin = {t: name for name, tools in catalog.items() for t in tools}
-    chosen = set()
+    chosen: list[str] = []
     for n in names:
-        if n in catalog:
-            chosen.add(n)
-        elif n in tool_to_plugin:
-            chosen.add(tool_to_plugin[n])
+        plug = n if n in catalog else tool_to_plugin.get(n)
+        if plug and plug not in chosen:
+            chosen.append(plug)
     return chosen or None
 
 
@@ -120,20 +120,39 @@ async def run_agent(registry: Registry, history: list[dict],
 
     # Access control: restrict to the domains this user may use, so a restricted
     # user's model never even sees tools outside their grants.
-    allowed = access.allowed_plugins(context.current_user(), registry.plugins.keys())
+    user = context.current_user()
+    allowed = access.allowed_plugins(user, registry.plugins.keys())
     tools = registry.tools_for(allowed)
 
-    # Two-stage routing within the allowed set: with many tools a small model
-    # can't reliably pick one, so narrow to the plugins this message needs before
-    # the real turn. Falls back to the user's full allowed set if routing is off,
-    # the set is already small, or the router is unsure.
+    # Persona routing: the pre-read picks the domains this message needs (ordered,
+    # first = primary), narrows the tools, AND sets the responding persona +
+    # injects that persona's memory. Falls back to the plain assistant + the
+    # user's full allowed toolset when routing is off/small/unsure.
+    primary = ""
     if config.ROUTER_ENABLED and len(tools) > config.ROUTER_MIN_TOOLS:
         chosen = await _route(registry, user_text, allowed)
         if chosen:
-            narrowed = registry.tools_for(chosen & allowed)
-            if narrowed:
-                log.info("router: %s → %d/%d tools", sorted(chosen), len(narrowed), len(tools))
+            sel = [p for p in chosen if p in allowed]
+            narrowed = registry.tools_for(set(sel))
+            if sel and narrowed:
+                primary = sel[0]
                 tools = narrowed
+                log.info("router: primary=%s tools=%d/%d", primary, len(narrowed),
+                         len(registry.tools_for(allowed)))
+
+    # compose this turn's system prompt: safety base + primary persona + its memory.
+    sys = config.SYSTEM_PROMPT
+    if primary:
+        persona = registry.persona_of(primary)
+        ctx = registry.context_of(primary, user)
+        if persona:
+            sys += "\n\n# Active specialist\n" + persona
+        if ctx:
+            sys += "\n\n# Context for this conversation\n" + ctx
+    if history and history[0].get("role") == "system":
+        history[0]["content"] = sys
+    else:
+        history.insert(0, {"role": "system", "content": sys})
 
     history.append({"role": "user", "content": user_text})
     for _ in range(MAX_TOOL_ROUNDS):
