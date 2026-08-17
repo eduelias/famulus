@@ -17,6 +17,10 @@ from .plugins import Registry
 MAX_TOOL_ROUNDS = 6
 log = logging.getLogger("famulus")
 
+# last routed primary domain per user, so a conversation stays with its active
+# specialist across short follow-ups (reset on process restart — harmless).
+_last_primary: dict[str, str] = {}
+
 
 class NoBackendAvailable(RuntimeError):
     """Every configured LLM backend failed to respond."""
@@ -61,19 +65,36 @@ async def _chat(messages: list[dict], tools: list[dict] | None,
 
 
 _ROUTER_SYS = (
-    "You are a router. Given capability categories (each with its tool names) and a "
-    "user message, decide which categories are needed to handle it. Return JSON exactly "
-    'as {"plugins": ["name", ...]} where each name is a CATEGORY name — the identifier '
-    'before the colon (e.g. "tutor", "torrent"), NOT an individual tool name. Include '
-    "EVERY category that might be needed (prefer including over excluding); use an empty "
-    "list only for pure small talk that needs no tools.")
+    "You are a router for an ongoing conversation. Given capability categories (each "
+    "with its tool names), the recent conversation, and a new message, decide which "
+    "categories the NEW message needs. Return JSON exactly as "
+    '{"plugins": ["name", ...]} where each name is a CATEGORY name — the identifier '
+    'before the colon (e.g. "tutor", "torrent"), NOT an individual tool name.\n'
+    "CONTINUITY MATTERS: if a 'current specialist' is given and the new message is a "
+    "short reply or a follow-up that continues that ongoing topic (e.g. 'ja', 'waarom?', "
+    "a question about the current lesson), KEEP the current specialist first. Switch to a "
+    "different category only when the new message clearly changes topic to it. Use an "
+    "empty list only for pure small talk that needs no tools.")
 
 
-async def _route(registry: Registry, user_text: str,
-                 allowed: set[str] | None = None) -> list[str] | None:
+def recent_context(history: list[dict], turns: int = 4) -> str:
+    """The last few user/assistant lines (text only), oldest→newest, for the router."""
+    lines = []
+    for m in history:
+        if m.get("role") in ("user", "assistant"):
+            txt = m.get("content")
+            if isinstance(txt, str) and txt.strip():
+                lines.append(f"{m['role']}: {' '.join(txt.split())[:200]}")
+    return "\n".join(lines[-turns:])
+
+
+async def _route(registry: Registry, user_text: str, allowed: set[str] | None = None,
+                 recent: str = "", current_primary: str = "") -> list[str] | None:
     """Ordered relevant plugins (first = primary), or None to use all tools.
 
-    `allowed` restricts routing to the plugins the current user may use."""
+    `allowed` restricts routing to the plugins the current user may use; `recent`
+    and `current_primary` give the router conversation context so short follow-ups
+    stay with the active specialist instead of mis-routing."""
     catalog = registry.plugin_catalog()
     if allowed is not None:
         catalog = {k: v for k, v in catalog.items() if k in allowed}
@@ -81,8 +102,13 @@ async def _route(registry: Registry, user_text: str,
         return None
     menu = "\n".join(f"- {name}: {', '.join(tools[:10])}"
                      for name, tools in catalog.items())
-    user = (f"Categories (name: its tools):\n{menu}\n\n"
-            f"User message: {user_text!r}\n\nReturn the JSON now.")
+    ctx = ""
+    if recent:
+        ctx += f"Recent conversation (oldest→newest):\n{recent}\n"
+    if current_primary:
+        ctx += f"Current active specialist: {current_primary}\n"
+    user = (f"Categories (name: its tools):\n{menu}\n\n{ctx}\n"
+            f"New message: {user_text!r}\n\nReturn the JSON now.")
     try:
         msg = await _chat([{"role": "system", "content": _ROUTER_SYS},
                            {"role": "user", "content": user}], tools=None, fmt="json")
@@ -126,19 +152,27 @@ async def run_agent(registry: Registry, history: list[dict],
 
     # Persona routing: the pre-read picks the domains this message needs (ordered,
     # first = primary), narrows the tools, AND sets the responding persona +
-    # injects that persona's memory. Falls back to the plain assistant + the
+    # injects that persona's memory. It's given the recent conversation + the
+    # active specialist so a short follow-up ('ja', 'waarom?') stays in the same
+    # persona instead of mis-routing. Falls back to the plain assistant + the
     # user's full allowed toolset when routing is off/small/unsure.
     primary = ""
     if config.ROUTER_ENABLED and len(tools) > config.ROUTER_MIN_TOOLS:
-        chosen = await _route(registry, user_text, allowed)
-        if chosen:
-            sel = [p for p in chosen if p in allowed]
+        was = _last_primary.get(user, "")
+        chosen = await _route(registry, user_text, allowed,
+                              recent=recent_context(history),
+                              current_primary=was if was in allowed else "")
+        sel = [p for p in (chosen or []) if p in allowed]
+        if not sel and was in allowed:
+            sel = [was]  # sticky: keep the active specialist on an ambiguous turn
+        if sel:
+            primary = sel[0]
             narrowed = registry.tools_for(set(sel))
-            if sel and narrowed:
-                primary = sel[0]
+            if narrowed:
                 tools = narrowed
-                log.info("router: primary=%s tools=%d/%d", primary, len(narrowed),
-                         len(registry.tools_for(allowed)))
+            _last_primary[user] = primary
+            log.info("router: primary=%s (was %s) tools=%d/%d", primary, was or "-",
+                     len(tools), len(registry.tools_for(allowed)))
 
     # compose this turn's system prompt: safety base + primary persona + its memory.
     sys = config.SYSTEM_PROMPT

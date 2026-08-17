@@ -143,3 +143,52 @@ def test_persona_and_context_injected_into_system(monkeypatch):
     assert "level A2, weak on word order" in seen["system"]
     # and only the tutor's tools were exposed
     assert seen["tools"] == ["tutor_lesson"]
+
+
+def test_recent_context_formats_last_turns():
+    hist = [{"role": "system", "content": "s"},
+            {"role": "user", "content": "leer me Nederlands"},
+            {"role": "assistant", "content": "Hoi! Wat wil je leren?"},
+            {"role": "user", "content": "hoe zeg je hond?"}]
+    ctx = llm.recent_context(hist, turns=4)
+    assert "system:" not in ctx                       # system excluded
+    assert "leer me Nederlands" in ctx and "hoe zeg je hond" in ctx
+
+
+def test_route_receives_conversation_context(monkeypatch):
+    r = _reg()
+    seen = {}
+
+    async def fake_chat(messages, tools=None, model_override="", fmt=""):
+        seen["prompt"] = messages[-1]["content"]
+        return {"content": '{"plugins": ["torrent"]}'}
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    asyncio.run(llm._route(r, "ja", recent="user: hoe is mijn ratio?", current_primary="torrent"))
+    assert "Current active specialist: torrent" in seen["prompt"]
+    assert "hoe is mijn ratio?" in seen["prompt"]
+
+
+def test_sticky_primary_on_ambiguous_followup(monkeypatch):
+    r = Registry([_Tutor(), _Torrent(), _Weather()])
+    monkeypatch.setattr("famulus.config.ROUTER_ENABLED", True)
+    monkeypatch.setattr("famulus.config.ROUTER_MIN_TOOLS", 1)
+    monkeypatch.setattr("famulus.context.current_user", lambda: "u1")
+    llm._last_primary.pop("u1", None)
+
+    async def fake_chat(messages, tools=None, model_override="", fmt=""):
+        if fmt == "json":
+            # first message routes to tutor; the ambiguous follow-up routes to nothing
+            if "leer me" in messages[-1]["content"].lower():
+                return {"content": '{"plugins": ["tutor"]}'}
+            return {"content": '{"plugins": []}'}
+        return {"content": "ok"}
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    hist = [{"role": "system", "content": "base"}]
+    asyncio.run(llm.run_agent(r, hist, "leer me Nederlands"))
+    assert llm._last_primary["u1"] == "tutor"
+    # ambiguous "ja" -> router returns [] -> stays tutor (sticky)
+    asyncio.run(llm.run_agent(r, hist, "ja"))
+    assert llm._last_primary["u1"] == "tutor"
+    assert "Dutch tutor" in hist[0]["content"]        # tutor persona still active
