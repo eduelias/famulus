@@ -85,12 +85,15 @@ class Registry:
         p = self.plugins.get(name)
         return getattr(p, "persona", "") or "" if p else ""
 
-    def context_of(self, name: str, user: str) -> str:
+    def context_of(self, name: str, user: str, history: list | None = None) -> str:
         p = self.plugins.get(name)
         if p is None or not callable(getattr(p, "context", None)):
             return ""
         try:
-            return p.context(user) or ""
+            try:
+                return p.context(user, history) or ""
+            except TypeError:  # older plugin with context(self, user) only
+                return p.context(user) or ""
         except Exception:
             log.exception("context() failed in plugin %s", name)
             return ""

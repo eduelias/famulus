@@ -66,8 +66,13 @@ class BasePlugin:
     gated: set[str] = set()
     persona: str = ""
 
-    def context(self, user: str) -> str:
-        """Per-user memory/params to inject when this plugin is the primary."""
+    def context(self, user: str, history: list | None = None) -> str:
+        """Per-user memory/params to inject when this plugin is the primary.
+
+        `history` is the conversation so far (excluding the incoming message), so a
+        plugin can tell a fresh start from an ongoing session and inject
+        accordingly (e.g. the tutor gives the full lesson at the start, then just
+        'continue from the conversation, don't repeat' on follow-ups)."""
         return ""
 
     def is_gated(self, tool: str, args: dict) -> bool:

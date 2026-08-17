@@ -178,7 +178,7 @@ async def run_agent(registry: Registry, history: list[dict],
     sys = config.SYSTEM_PROMPT
     if primary:
         persona = registry.persona_of(primary)
-        ctx = registry.context_of(primary, user)
+        ctx = registry.context_of(primary, user, history)  # history: start vs continue
         if persona:
             sys += "\n\n# Active specialist\n" + persona
         if ctx:
