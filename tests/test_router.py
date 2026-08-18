@@ -203,6 +203,29 @@ def test_no_persona_model_leaves_base_model(monkeypatch):
     assert seen["model"] == ""          # torrent declares no model → base chain
 
 
+class _Shortcutter(BasePlugin):
+    name = "tutor"
+    tools = [spec("tutor_lesson", "lesson", {}, [])]
+
+    def shortcut(self, message, user):
+        return "LESSON TEXT" if "les" in message.lower() else None
+
+    def execute(self, tool, args):
+        return "x"
+
+
+def test_registry_shortcut_returns_first_match():
+    r = Registry([_Shortcutter(), _Weather()])
+    assert r.shortcut("geef me een les", "u1") == "LESSON TEXT"
+    assert r.shortcut("what's the weather", "u1") is None       # no plugin matched
+
+
+def test_registry_shortcut_respects_allowed():
+    r = Registry([_Shortcutter(), _Weather()])
+    # tutor not in the allowed set → its shortcut is skipped
+    assert r.shortcut("geef me een les", "u1", allowed={"weather"}) is None
+
+
 def test_recent_context_formats_last_turns():
     hist = [{"role": "system", "content": "s"},
             {"role": "user", "content": "leer me Nederlands"},

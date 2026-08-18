@@ -1,11 +1,12 @@
 """WhatsApp Cloud API webhook + agent orchestration."""
+import asyncio
 import hashlib
 import hmac
 import logging
 
 from fastapi import FastAPI, Request, Response
 
-from . import admin, config, context, llm, wa
+from . import access, admin, config, context, llm, wa
 from .plugins import load_registry
 
 logging.basicConfig(level=logging.INFO)
@@ -84,7 +85,6 @@ async def _handle(msg: dict) -> None:
                 continue
             await wa.send_text(sender, "📄 Received — processing…")
             try:
-                import asyncio
                 reply = await asyncio.to_thread(p.handle_document, msg)
                 if reply:
                     await wa.send_text(sender, reply)
@@ -147,6 +147,24 @@ async def _handle(msg: dict) -> None:
         sender, [{"role": "system", "content": config.SYSTEM_PROMPT}])
     if len(history) > 40:  # keep context bounded
         del history[1:-20]
+
+    # Deterministic plugin shortcuts: reliably serve an action a small model
+    # might fumble as a tool call (e.g. the tutor delivering "give me my lesson"
+    # directly instead of chatting that the lesson is over). Only the user's
+    # allowed plugins are consulted; recorded in history so follow-ups stay coherent.
+    allowed = access.allowed_plugins(context.current_user(), registry.plugins.keys())
+    try:
+        shortcut = await asyncio.to_thread(
+            registry.shortcut, text, context.current_user(), allowed)
+    except Exception:
+        log.exception("plugin shortcut failed")
+        shortcut = None
+    if shortcut:
+        history.append({"role": "user", "content": text})
+        history.append({"role": "assistant", "content": shortcut})
+        await wa.send_text(sender, shortcut)
+        return
+
     try:
         reply, action = await llm.run_agent(registry, history, text)
     except llm.NoBackendAvailable as e:

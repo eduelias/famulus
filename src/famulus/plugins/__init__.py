@@ -103,6 +103,25 @@ class Registry:
             log.exception("context() failed in plugin %s", name)
             return ""
 
+    def shortcut(self, message: str, user: str, allowed=None) -> str | None:
+        """First non-None deterministic shortcut reply from the user's allowed
+        plugins, or None to fall through to the agent loop."""
+        for name, p in self.plugins.items():
+            if allowed is not None and name not in allowed:
+                continue
+            fn = getattr(p, "shortcut", None)
+            if not callable(fn):
+                continue
+            try:
+                out = fn(message, user)
+            except Exception:
+                log.exception("shortcut() failed in plugin %s", name)
+                continue
+            if out:
+                log.info("shortcut: %s handled the message deterministically", name)
+                return out
+        return None
+
     def execute(self, tool: str, args: dict) -> object:
         p = self._owner(tool)
         # defense in depth: re-check access at execution time (covers the gated
