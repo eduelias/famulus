@@ -131,6 +131,12 @@ CANCEL_WORDS = {w.strip() for w in os.environ.get(
 ROUTER_ENABLED = os.environ.get("FAMULUS_ROUTER", "on").lower() != "off"
 ROUTER_MIN_TOOLS = int(os.environ.get("FAMULUS_ROUTER_MIN_TOOLS", "18"))
 
+# Debug: log each turn's incoming text, the tools it called, and the reply, so a
+# conversation can be inspected in the container logs. Off by default (it logs
+# message content); enable with FAMULUS_LOG_CONVERSATIONS=true while debugging.
+LOG_CONVERSATIONS = os.environ.get("FAMULUS_LOG_CONVERSATIONS", "").lower() in (
+    "1", "true", "yes", "on")
+
 # ---- Built-in tools ----
 SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://searxng:8080")
 

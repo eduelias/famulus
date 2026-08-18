@@ -147,6 +147,9 @@ async def _handle(msg: dict) -> None:
         sender, [{"role": "system", "content": config.SYSTEM_PROMPT}])
     if len(history) > 40:  # keep context bounded
         del history[1:-20]
+    if config.LOG_CONVERSATIONS:
+        log.info("conv in <%s>: %r", sender, text[:300])
+    turn_start = len(history)
     try:
         reply, action = await llm.run_agent(registry, history, text)
     except llm.NoBackendAvailable as e:
@@ -164,6 +167,11 @@ async def _handle(msg: dict) -> None:
             sender, "⚠️ Something went wrong handling that message. "
                     "The details are in my logs.")
         return
+    if config.LOG_CONVERSATIONS:
+        calls = [c["function"]["name"] for m in history[turn_start:]
+                 if m.get("role") == "assistant" for c in (m.get("tool_calls") or [])]
+        log.info("conv out <%s> tools=%s pending=%s: %r",
+                 sender, calls, action.tool if action else None, (reply or "")[:400])
     if action:
         pending[sender] = action
         await wa.send_text(
