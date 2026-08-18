@@ -81,16 +81,6 @@ class BasePlugin:
         'continue from the conversation, don't repeat' on follow-ups)."""
         return ""
 
-    def shortcut(self, message: str, user: str) -> str | None:
-        """Deterministic reply for a message this plugin can answer WITHOUT the
-        LLM, bypassing tool-choice for reliability. Return the reply text, or None
-        to fall through to the normal agent loop. Use for high-value actions a
-        small model fumbles as a tool call (e.g. the tutor serving 'give me my
-        lesson' directly instead of chatting that the lesson is over). Only match
-        unambiguous requests; return None when in doubt so conversation still
-        flows through the model."""
-        return None
-
     def is_gated(self, tool: str, args: dict) -> bool:
         return tool in self.gated
 
