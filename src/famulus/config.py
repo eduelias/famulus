@@ -6,6 +6,10 @@ MODEL_DEFAULT = os.environ.get("MODEL_DEFAULT", "qwen3:8b")
 # Optional second model for messages starting with "code:" (empty = disabled)
 MODEL_CODER = os.environ.get("MODEL_CODER", "")
 LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "300"))
+# Context window requested from Ollama. The default 4096 silently 400s once the
+# tool specs alone exceed it (52 tools ≈ 5.6k tokens), so ask for enough to hold
+# the full toolset + bounded history.
+LLM_NUM_CTX = int(os.environ.get("LLM_NUM_CTX", "16384"))
 # keep this low: a sleeping host drops packets and would otherwise
 # stall the whole failover for the read timeout
 LLM_CONNECT_TIMEOUT = float(os.environ.get("LLM_CONNECT_TIMEOUT", "5"))

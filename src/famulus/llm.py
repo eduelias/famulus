@@ -44,6 +44,7 @@ async def _post_chat(url: str, model: str, messages: list[dict],
             f"{url}/api/chat",
             json={"model": model, "messages": messages, "stream": False,
                   "think": False, "keep_alive": "60m",
+                  "options": {"num_ctx": config.LLM_NUM_CTX},
                   **({"tools": tools} if tools else {}),
                   **({"format": fmt} if fmt else {})},
         )

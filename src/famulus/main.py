@@ -6,7 +6,7 @@ import logging
 
 from fastapi import FastAPI, Request, Response
 
-from . import admin, config, context, llm, wa
+from . import admin, chatlog, config, context, llm, wa
 from .plugins import load_registry
 
 logging.basicConfig(level=logging.INFO)
@@ -149,6 +149,8 @@ async def _handle(msg: dict) -> None:
         del history[1:-20]
     if config.LOG_CONVERSATIONS:
         log.info("conv in <%s>: %r", sender, text[:300])
+        asyncio.get_running_loop().run_in_executor(
+            None, chatlog.post, "in", sender, text, None)
     turn_start = len(history)
     try:
         reply, action = await llm.run_agent(registry, history, text)
@@ -172,6 +174,9 @@ async def _handle(msg: dict) -> None:
                  if m.get("role") == "assistant" for c in (m.get("tool_calls") or [])]
         log.info("conv out <%s> tools=%s pending=%s: %r",
                  sender, calls, action.tool if action else None, (reply or "")[:400])
+        asyncio.get_running_loop().run_in_executor(
+            None, chatlog.post, "out", sender,
+            reply or (action.description if action else ""), calls)
     if action:
         pending[sender] = action
         await wa.send_text(
