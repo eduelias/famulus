@@ -185,3 +185,8 @@ async def _handle(msg: dict) -> None:
             + action.description)
     elif reply:
         await wa.send_text(sender, reply)
+    else:
+        # the model produced an empty reply — never go silent on the user
+        log.warning("empty reply for <%s> — sending fallback", sender)
+        await wa.send_text(
+            sender, "🤔 I came up empty on that one — mind rephrasing it?")
