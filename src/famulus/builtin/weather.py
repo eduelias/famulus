@@ -35,7 +35,8 @@ def forecast(location: str, days: int = 3) -> dict:
             "current": "temperature_2m,apparent_temperature,weather_code,"
                        "wind_speed_10m,relative_humidity_2m",
             "daily": "weather_code,temperature_2m_max,temperature_2m_min,"
-                     "precipitation_probability_max,precipitation_sum",
+                     "precipitation_probability_max,precipitation_sum,"
+                     "sunrise,sunset",
         },
         timeout=15,
     ).json()
@@ -58,6 +59,8 @@ def forecast(location: str, days: int = 3) -> dict:
                 "max_c": daily["temperature_2m_max"][i],
                 "rain_chance_pct": daily["precipitation_probability_max"][i],
                 "rain_mm": daily["precipitation_sum"][i],
+                "sunrise": daily["sunrise"][i][-5:],   # local HH:MM
+                "sunset": daily["sunset"][i][-5:],
             }
             for i in range(len(daily.get("time", [])))
         ],
