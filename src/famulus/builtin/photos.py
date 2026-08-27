@@ -109,10 +109,12 @@ class PhotosPlugin(BasePlugin):
         if person_name:
             person = _find_person(person_name)
             if person is None:
-                return {"sent": 0,
+                return {"sent": 0, "final": True,
                         "message": f"Nobody named '{person_name}' is tagged in the "
                                    "photo library yet. Faces can be named in Immich; "
-                                   "try a content search meanwhile."}
+                                   "try a content search meanwhile.",
+                        "instruction": "Relay this message to the user now. Do NOT "
+                                       "call photo_search again for this request."}
         assets = _search_assets(person["id"] if person else None, query, count)
         if not assets:
             return {"sent": 0, "message": "No matching photos found."}

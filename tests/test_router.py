@@ -203,6 +203,26 @@ def test_no_persona_model_leaves_base_model(monkeypatch):
     assert seen["model"] == ""          # torrent declares no model → base chain
 
 
+def test_duplicate_tool_call_breaks_loop(monkeypatch):
+    """A model retrying the identical call gets an answer-now nudge, not a re-run."""
+    r = _reg()
+    executed = []
+    monkeypatch.setattr(r, "execute", lambda name, args: executed.append(name) or "0.5")
+    monkeypatch.setattr("famulus.config.ROUTER_ENABLED", False)
+    calls = {"n": 0}
+
+    async def fake_chat(messages, tools=None, model_override="", fmt=""):
+        calls["n"] += 1
+        if calls["n"] <= 3:  # model stubbornly repeats the same call
+            return {"tool_calls": [{"function": {"name": "tl_ratio", "arguments": {}}}]}
+        return {"content": "final answer"}
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    reply, _ = asyncio.run(llm.run_agent(r, [{"role": "system", "content": "s"}], "ratio?"))
+    assert reply == "final answer"
+    assert executed == ["tl_ratio"]          # executed ONCE, repeats were blocked
+
+
 def test_recent_context_formats_last_turns():
     hist = [{"role": "system", "content": "s"},
             {"role": "user", "content": "leer me Nederlands"},

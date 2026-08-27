@@ -210,6 +210,7 @@ async def run_agent(registry: Registry, history: list[dict],
         history.insert(0, {"role": "system", "content": sys})
 
     history.append({"role": "user", "content": user_text})
+    seen_calls: set[str] = set()
     for _ in range(MAX_TOOL_ROUNDS):
         msg = await _chat(history, tools=tools, model_override=model_override)
         history.append(msg)
@@ -221,6 +222,16 @@ async def run_agent(registry: Registry, history: list[dict],
             args = call["function"]["arguments"]
             if isinstance(args, str):
                 args = json.loads(args or "{}")
+            # anti-loop: a model retrying the exact same call won't get new data —
+            # tell it to answer with what it already has instead of burning rounds.
+            sig = name + json.dumps(args, sort_keys=True, default=str)
+            if sig in seen_calls:
+                history.append({"role": "tool", "content": json.dumps({
+                    "error": "You already made this exact call and have its result. "
+                             "Do not call it again — answer the user now using the "
+                             "previous result."})})
+                continue
+            seen_calls.add(sig)
             if registry.is_gated(name, args):
                 return "", PendingAction(name, args, registry.describe(name, args))
             try:
