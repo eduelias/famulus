@@ -115,12 +115,14 @@ class Registry:
 
 def load_registry() -> Registry:
     """Built-in plugins plus everything installed in the famulus.plugins group."""
+    from ..builtin.photos import PhotosPlugin
     from ..builtin.reminders import RemindersPlugin
     from ..builtin.users import UsersPlugin
     from ..builtin.weather import WeatherPlugin
     from ..builtin.web import WebPlugin
 
-    plugins: list = [WeatherPlugin(), WebPlugin(), UsersPlugin(), RemindersPlugin()]
+    plugins: list = [WeatherPlugin(), WebPlugin(), UsersPlugin(), RemindersPlugin(),
+                     PhotosPlugin()]
     for ep in entry_points(group="famulus.plugins"):
         try:
             obj = ep.load()
