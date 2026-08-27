@@ -119,8 +119,18 @@ class PhotosPlugin(BasePlugin):
 
         sent = 0
         for a in assets:
-            thumb = _immich("GET", f"/assets/{a['id']}/thumbnail",
-                            params={"size": "preview"})
+            thumb = None
+            try:
+                thumb = _immich("GET", f"/assets/{a['id']}/thumbnail",
+                                params={"size": "preview"})
+            except httpx.HTTPStatusError:
+                # thumbnail not generated yet (fresh index) — try the original,
+                # guarded by WhatsApp's ~5MB image limit
+                orig = _immich("GET", f"/assets/{a['id']}/original")
+                if len(orig.content) <= 4_500_000:
+                    thumb = orig
+            if thumb is None:
+                continue
             when = (a.get("fileCreatedAt") or a.get("localDateTime") or "")[:10]
             cap = " ".join(x for x in [person_name.title() if person_name else "",
                                        query, f"({when})" if when else ""] if x).strip()
