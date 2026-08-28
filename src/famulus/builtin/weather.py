@@ -86,8 +86,11 @@ class WeatherPlugin(BasePlugin):
     name = "weather"
     tools = [
         spec("weather_forecast",
-             "Current weather and daily forecast for a location (city name).",
-             {"location": {"type": "string"},
+             "Current weather and daily forecast. location = a city name, or "
+             "'here' for the asking user's current location (works for any family "
+             "member: 'weather here', 'what's it like where I am').",
+             {"location": {"type": "string",
+                           "description": "city name, or 'here' for the user's location"},
               "days": {"type": "integer", "description": "1-7, default 3"}},
              ["location"]),
     ]
