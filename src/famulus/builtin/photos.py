@@ -44,12 +44,16 @@ def _search_assets(person_id: str | None, query: str, count: int) -> list[dict]:
             body["personIds"] = [person_id]
         res = _immich("POST", "/search/smart", json=body).json()
     else:
-        body = {"size": max(count * 3, 10), "type": "IMAGE", "order": "desc",
-                "withPeople": True}
+        body = {"size": 200, "type": "IMAGE", "order": "desc", "withPeople": True}
         if person_id:
             body["personIds"] = [person_id]
         res = _immich("POST", "/search/metadata", json=body).json()
     items = res.get("assets", {}).get("items", [])
+    if not query:
+        # the API's order param isn't reliable — "most recent" must be true:
+        # sort by capture date ourselves before slicing
+        items.sort(key=lambda a: a.get("localDateTime") or a.get("fileCreatedAt") or "",
+                   reverse=True)
     return items[:count]
 
 

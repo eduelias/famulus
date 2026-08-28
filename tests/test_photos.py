@@ -66,3 +66,16 @@ def test_execute_unconfigured(monkeypatch):
     monkeypatch.setattr(photos, "IMMICH_URL", "")
     with pytest.raises(ValueError):
         photos.PhotosPlugin().execute("photo_search", {})
+
+
+def test_metadata_search_sorts_newest_first(monkeypatch):
+    items = [{"id": "old", "localDateTime": "2023-01-01T10:00:00"},
+             {"id": "new", "localDateTime": "2026-08-20T10:00:00"},
+             {"id": "mid", "fileCreatedAt": "2025-01-01T10:00:00"}]
+
+    class R:
+        def json(self):
+            return {"assets": {"items": list(items)}}
+    monkeypatch.setattr(photos, "_immich", lambda m, p, **k: R())
+    out = photos._search_assets("pid", "", 2)
+    assert [a["id"] for a in out] == ["new", "mid"]   # newest first, truly
