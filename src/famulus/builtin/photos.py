@@ -39,18 +39,24 @@ def _find_person(name: str) -> dict | None:
 
 
 def _search_assets(person_ids: list[str], query: str, count: int,
-                   recent: bool = False) -> list[dict]:
+                   recent: bool = False, year: int = 0) -> list[dict]:
     if query:
         # recent=True: take a wide pool of RELEVANT matches, then newest wins
         body = {"query": query, "size": 60 if recent else max(count * 3, 10),
                 "type": "IMAGE"}
         if person_ids:
             body["personIds"] = person_ids
+        if year:
+            body["takenAfter"] = f"{year}-01-01T00:00:00Z"
+            body["takenBefore"] = f"{year}-12-31T23:59:59Z"
         res = _immich("POST", "/search/smart", json=body).json()
     else:
         body = {"size": 200, "type": "IMAGE", "order": "desc", "withPeople": True}
         if person_ids:
             body["personIds"] = person_ids
+        if year:
+            body["takenAfter"] = f"{year}-01-01T00:00:00Z"
+            body["takenBefore"] = f"{year}-12-31T23:59:59Z"
         res = _immich("POST", "/search/metadata", json=body).json()
     items = res.get("assets", {}).get("items", [])
     if not query or recent:
@@ -104,6 +110,10 @@ class PhotosPlugin(BasePlugin):
               "query": {"type": "string", "description": "free-text content search, optional"},
               "recent": {"type": "boolean",
                          "description": "true = newest among the matches (user said recent/latest)"},
+              "year": {"type": "integer",
+                       "description": "restrict to one year, e.g. 2025 for 'last year' (see today's date in your context)"},
+              "exclusive": {"type": "boolean",
+                            "description": "true = ONLY the named people in the photo, nobody else ('just the two of them')"},
               "count": {"type": "integer", "description": "how many photos, default 1, max 5"}},
              []),
     ]
@@ -135,7 +145,21 @@ class PhotosPlugin(BasePlugin):
             person_ids.append(person["id"])
             display.append(person.get("name") or n.title())
         recent = bool(args.get("recent"))
-        assets = _search_assets(person_ids, query, count, recent)
+        year = int(args.get("year", 0) or 0)
+        exclusive = bool(args.get("exclusive"))
+        fetch = count * 4 if exclusive else count
+        assets = _search_assets(person_ids, query, fetch, recent, year)
+        if exclusive and person_ids:
+            wanted = set(person_ids)
+            picked = []
+            for a in assets:
+                info = _immich("GET", "/assets/" + a["id"]).json()
+                on_photo = {pp.get("id") for pp in info.get("people", [])}
+                if on_photo == wanted:
+                    picked.append(a)
+                if len(picked) >= count:
+                    break
+            assets = picked
         if not assets:
             return {"sent": 0, "message": "No matching photos found."}
 

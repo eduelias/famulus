@@ -42,7 +42,7 @@ def test_search_smart_vs_metadata(monkeypatch):
 def test_execute_sends_and_reports(monkeypatch):
     monkeypatch.setattr(photos, "_find_person", lambda n: {"id": "pid", "name": "Lily"})
     monkeypatch.setattr(photos, "_search_assets",
-                        lambda p, q, c, r=False: [{"id": "a1", "fileCreatedAt": "2020-05-01T"}])
+                        lambda *a, **k: [{"id": "a1", "fileCreatedAt": "2020-05-01T"}])
 
     class Thumb:
         content = b"jpegbytes"
@@ -86,7 +86,7 @@ def test_multi_person_together(monkeypatch):
     monkeypatch.setattr(photos, "_find_person", lambda n: people.get(n.lower()))
     seen = {}
     monkeypatch.setattr(photos, "_search_assets",
-                        lambda ids, q, c, r=False: seen.update(ids=ids, count=c) or
+                        lambda ids, q, c, *a, **k: seen.update(ids=ids, count=c) or
                         [{"id": "x", "localDateTime": "2026-01-01"}])
     class Thumb:
         content = b"j"; headers = {"content-type": "image/jpeg"}
@@ -117,3 +117,38 @@ def test_recent_flag_date_sorts_smart_results(monkeypatch):
     assert out[0]["id"] == "ok-match-2026"             # newest relevant wins
     out2 = photos._search_assets(["pid"], "beach", 1, recent=False)
     assert out2[0]["id"] == "best-match-2017"          # pure relevance preserved
+
+
+def test_year_filter_and_exclusive(monkeypatch):
+    bodies = []
+
+    class R:
+        def __init__(self, payload): self._p = payload
+        def json(self): return self._p
+
+    def fake(method, path, **kw):
+        if path.startswith("/search"):
+            bodies.append(kw["json"])
+            return R({"assets": {"items": [
+                {"id": "solo2", "localDateTime": "2025-05-01"},
+                {"id": "group", "localDateTime": "2025-06-01"}]}})
+        if path == "/assets/solo2":
+            return R({"people": [{"id": "L"}, {"id": "B"}]})
+        if path == "/assets/group":
+            return R({"people": [{"id": "L"}, {"id": "B"}, {"id": "X"}]})
+        class T:
+            content = b"j"
+            headers = {"content-type": "image/jpeg"}
+        return T()
+    monkeypatch.setattr(photos, "_immich", fake)
+    monkeypatch.setattr(photos, "_find_person",
+                        lambda n: {"lily": {"id": "L", "name": "Lily"},
+                                   "ben": {"id": "B", "name": "Ben"}}.get(n.lower()))
+    sent = []
+    monkeypatch.setattr(photos, "_send_image_to", lambda u, i, m, c: sent.append(c) or True)
+    monkeypatch.setattr(photos, "_immich", fake)
+    out = photos.PhotosPlugin().execute(
+        "photo_search", {"people": "lily, ben", "year": 2025, "exclusive": True})
+    assert bodies[0]["takenAfter"].startswith("2025-01-01")
+    assert bodies[0]["takenBefore"].startswith("2025-12-31")
+    assert out["sent"] == 1                      # only the exclusive pair photo

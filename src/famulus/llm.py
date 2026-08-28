@@ -192,7 +192,9 @@ async def run_agent(registry: Registry, history: list[dict],
 
     # compose this turn's system prompt: safety base + primary persona + its memory,
     # and answer on the persona's preferred model if it declares one.
-    sys = config.SYSTEM_PROMPT
+    import datetime as _dt
+    sys = config.SYSTEM_PROMPT + _dt.datetime.now().strftime(
+        "\n\nToday is %A, %Y-%m-%d.")
     model_override = ""
     if primary:
         persona = registry.persona_of(primary)
