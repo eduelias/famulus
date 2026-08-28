@@ -42,7 +42,7 @@ def test_search_smart_vs_metadata(monkeypatch):
 def test_execute_sends_and_reports(monkeypatch):
     monkeypatch.setattr(photos, "_find_person", lambda n: {"id": "pid", "name": "Lily"})
     monkeypatch.setattr(photos, "_search_assets",
-                        lambda p, q, c: [{"id": "a1", "fileCreatedAt": "2020-05-01T"}])
+                        lambda p, q, c, r=False: [{"id": "a1", "fileCreatedAt": "2020-05-01T"}])
 
     class Thumb:
         content = b"jpegbytes"
@@ -86,7 +86,7 @@ def test_multi_person_together(monkeypatch):
     monkeypatch.setattr(photos, "_find_person", lambda n: people.get(n.lower()))
     seen = {}
     monkeypatch.setattr(photos, "_search_assets",
-                        lambda ids, q, c: seen.update(ids=ids, count=c) or
+                        lambda ids, q, c, r=False: seen.update(ids=ids, count=c) or
                         [{"id": "x", "localDateTime": "2026-01-01"}])
     class Thumb:
         content = b"j"; headers = {"content-type": "image/jpeg"}
