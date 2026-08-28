@@ -38,9 +38,12 @@ def _find_person(name: str) -> dict | None:
     return (exact or partial or [None])[0]
 
 
-def _search_assets(person_ids: list[str], query: str, count: int) -> list[dict]:
+def _search_assets(person_ids: list[str], query: str, count: int,
+                   recent: bool = False) -> list[dict]:
     if query:
-        body = {"query": query, "size": max(count * 3, 10), "type": "IMAGE"}
+        # recent=True: take a wide pool of RELEVANT matches, then newest wins
+        body = {"query": query, "size": 60 if recent else max(count * 3, 10),
+                "type": "IMAGE"}
         if person_ids:
             body["personIds"] = person_ids
         res = _immich("POST", "/search/smart", json=body).json()
@@ -50,7 +53,7 @@ def _search_assets(person_ids: list[str], query: str, count: int) -> list[dict]:
             body["personIds"] = person_ids
         res = _immich("POST", "/search/metadata", json=body).json()
     items = res.get("assets", {}).get("items", [])
-    if not query:
+    if not query or recent:
         # the API's order param isn't reliable — "most recent" must be true:
         # sort by capture date ourselves before slicing
         items.sort(key=lambda a: a.get("localDateTime") or a.get("fileCreatedAt") or "",
@@ -91,12 +94,16 @@ class PhotosPlugin(BasePlugin):
              "asking user on WhatsApp. people = family member name(s) as tagged, "
              "comma-separated — MULTIPLE names means photos where they appear "
              "TOGETHER ('lily, ben' = both in the same shot). query = free-text "
-             "scene search ('beach', 'birthday cake'); combine to narrow. Omit "
-             "both for most recent. count: keep 1 unless the user asks for more.",
+             "scene search ('beach', 'birthday cake'); combine to narrow. Set "
+             "recent=true whenever the user says recent/latest/newest — without it, "
+             "query results are best-match regardless of age. Omit people+query "
+             "for most recent overall. count: keep 1 unless the user asks for more.",
              {"people": {"type": "string",
                          "description": "comma-separated tagged names; multiple = together in one photo"},
               "person": {"type": "string", "description": "single family member (legacy alias)"},
               "query": {"type": "string", "description": "free-text content search, optional"},
+              "recent": {"type": "boolean",
+                         "description": "true = newest among the matches (user said recent/latest)"},
               "count": {"type": "integer", "description": "how many photos, default 1, max 5"}},
              []),
     ]
@@ -127,7 +134,8 @@ class PhotosPlugin(BasePlugin):
                                        "call photo_search again for this request."}
             person_ids.append(person["id"])
             display.append(person.get("name") or n.title())
-        assets = _search_assets(person_ids, query, count)
+        recent = bool(args.get("recent"))
+        assets = _search_assets(person_ids, query, count, recent)
         if not assets:
             return {"sent": 0, "message": "No matching photos found."}
 

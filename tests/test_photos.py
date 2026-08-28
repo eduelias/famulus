@@ -97,3 +97,23 @@ def test_multi_person_together(monkeypatch):
     assert seen["ids"] == ["L", "B"]          # both ids -> together-search
     assert seen["count"] == 1                  # default stays single
     assert out["sent"] == 1 and "Lily & Ben" in caps[0]
+
+
+def test_recent_flag_date_sorts_smart_results(monkeypatch):
+    items = [{"id": "best-match-2017", "localDateTime": "2017-07-01"},
+             {"id": "ok-match-2026", "localDateTime": "2026-08-01"}]
+    seen = {}
+
+    class R:
+        def json(self):
+            return {"assets": {"items": list(items)}}
+
+    def fake(method, path, **kw):
+        seen.update(kw.get("json", {}))
+        return R()
+    monkeypatch.setattr(photos, "_immich", fake)
+    out = photos._search_assets(["pid"], "beach", 1, recent=True)
+    assert seen["size"] == 60                          # wide relevant pool
+    assert out[0]["id"] == "ok-match-2026"             # newest relevant wins
+    out2 = photos._search_assets(["pid"], "beach", 1, recent=False)
+    assert out2[0]["id"] == "best-match-2017"          # pure relevance preserved
