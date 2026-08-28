@@ -10,6 +10,7 @@ once faces are named in the Immich UI; text search works once the CLIP job has
 indexed the library.
 """
 import os
+import re
 
 import httpx
 
@@ -37,16 +38,16 @@ def _find_person(name: str) -> dict | None:
     return (exact or partial or [None])[0]
 
 
-def _search_assets(person_id: str | None, query: str, count: int) -> list[dict]:
+def _search_assets(person_ids: list[str], query: str, count: int) -> list[dict]:
     if query:
         body = {"query": query, "size": max(count * 3, 10), "type": "IMAGE"}
-        if person_id:
-            body["personIds"] = [person_id]
+        if person_ids:
+            body["personIds"] = person_ids
         res = _immich("POST", "/search/smart", json=body).json()
     else:
         body = {"size": 200, "type": "IMAGE", "order": "desc", "withPeople": True}
-        if person_id:
-            body["personIds"] = [person_id]
+        if person_ids:
+            body["personIds"] = person_ids
         res = _immich("POST", "/search/metadata", json=body).json()
     items = res.get("assets", {}).get("items", [])
     if not query:
@@ -87,11 +88,14 @@ class PhotosPlugin(BasePlugin):
     tools = [
         spec("photo_search",
              "Search the family photo library and SEND matching photos to the "
-             "asking user on WhatsApp. person = a named family member (as tagged "
-             "in the library); query = free-text scene/content search ('beach', "
-             "'baby', 'birthday cake'); both together narrow it ('baby' photos of "
-             "person 'Lily'). Omit both for the most recent photos.",
-             {"person": {"type": "string", "description": "family member name, optional"},
+             "asking user on WhatsApp. people = family member name(s) as tagged, "
+             "comma-separated — MULTIPLE names means photos where they appear "
+             "TOGETHER ('lily, ben' = both in the same shot). query = free-text "
+             "scene search ('beach', 'birthday cake'); combine to narrow. Omit "
+             "both for most recent. count: keep 1 unless the user asks for more.",
+             {"people": {"type": "string",
+                         "description": "comma-separated tagged names; multiple = together in one photo"},
+              "person": {"type": "string", "description": "single family member (legacy alias)"},
               "query": {"type": "string", "description": "free-text content search, optional"},
               "count": {"type": "integer", "description": "how many photos, default 1, max 5"}},
              []),
@@ -105,21 +109,25 @@ class PhotosPlugin(BasePlugin):
         user = context.current_user()
         if not user:
             raise ValueError("no user in context")
-        person_name = str(args.get("person", "") or "").strip()
+        names_raw = str(args.get("people", "") or args.get("person", "") or "")
+        names = [n.strip() for n in re.split(r"[,;]| and | e | met ", names_raw,
+                                             flags=re.IGNORECASE) if n.strip()]
         query = str(args.get("query", "") or "").strip()
         count = min(max(int(args.get("count", 1) or 1), 1), 5)
 
-        person = None
-        if person_name:
-            person = _find_person(person_name)
+        person_ids, display = [], []
+        for n in names:
+            person = _find_person(n)
             if person is None:
                 return {"sent": 0, "final": True,
-                        "message": f"Nobody named '{person_name}' is tagged in the "
-                                   "photo library yet. Faces can be named in Immich; "
+                        "message": f"Nobody named '{n}' is tagged in the photo "
+                                   "library yet. Faces can be named in Immich; "
                                    "try a content search meanwhile.",
                         "instruction": "Relay this message to the user now. Do NOT "
                                        "call photo_search again for this request."}
-        assets = _search_assets(person["id"] if person else None, query, count)
+            person_ids.append(person["id"])
+            display.append(person.get("name") or n.title())
+        assets = _search_assets(person_ids, query, count)
         if not assets:
             return {"sent": 0, "message": "No matching photos found."}
 
@@ -138,8 +146,8 @@ class PhotosPlugin(BasePlugin):
             if thumb is None:
                 continue
             when = (a.get("fileCreatedAt") or a.get("localDateTime") or "")[:10]
-            cap = " ".join(x for x in [person_name.title() if person_name else "",
-                                       query, f"({when})" if when else ""] if x).strip()
+            cap = " ".join(x for x in [" & ".join(display), query,
+                                       f"({when})" if when else ""] if x).strip()
             if _send_image_to(user, thumb.content,
                               thumb.headers.get("content-type", "image/jpeg"),
                               cap or "📷 from the family library"):

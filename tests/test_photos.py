@@ -33,9 +33,9 @@ def test_search_smart_vs_metadata(monkeypatch):
         return R(path)
 
     monkeypatch.setattr(photos, "_immich", fake)
-    photos._search_assets("pid", "baby", 2)
+    photos._search_assets(["pid"], "baby", 2)
     assert calls[-1][0] == "/search/smart" and calls[-1][1]["personIds"] == ["pid"]
-    photos._search_assets(None, "", 1)
+    photos._search_assets([], "", 1)
     assert calls[-1][0] == "/search/metadata" and "personIds" not in calls[-1][1]
 
 
@@ -77,5 +77,23 @@ def test_metadata_search_sorts_newest_first(monkeypatch):
         def json(self):
             return {"assets": {"items": list(items)}}
     monkeypatch.setattr(photos, "_immich", lambda m, p, **k: R())
-    out = photos._search_assets("pid", "", 2)
+    out = photos._search_assets(["pid"], "", 2)
     assert [a["id"] for a in out] == ["new", "mid"]   # newest first, truly
+
+
+def test_multi_person_together(monkeypatch):
+    people = {"lily": {"id": "L", "name": "Lily"}, "ben": {"id": "B", "name": "Ben"}}
+    monkeypatch.setattr(photos, "_find_person", lambda n: people.get(n.lower()))
+    seen = {}
+    monkeypatch.setattr(photos, "_search_assets",
+                        lambda ids, q, c: seen.update(ids=ids, count=c) or
+                        [{"id": "x", "localDateTime": "2026-01-01"}])
+    class Thumb:
+        content = b"j"; headers = {"content-type": "image/jpeg"}
+    monkeypatch.setattr(photos, "_immich", lambda m, p, **k: Thumb())
+    caps = []
+    monkeypatch.setattr(photos, "_send_image_to", lambda u, i, m, c: caps.append(c) or True)
+    out = photos.PhotosPlugin().execute("photo_search", {"people": "Lily and Ben"})
+    assert seen["ids"] == ["L", "B"]          # both ids -> together-search
+    assert seen["count"] == 1                  # default stays single
+    assert out["sent"] == 1 and "Lily & Ben" in caps[0]
