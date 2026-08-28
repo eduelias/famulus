@@ -15,8 +15,18 @@ WMO = {
 }
 
 
+HERE_WORDS = {"", "here", "hier", "aqui", "my location", "current location"}
+
+
 def forecast(location: str, days: int = 3) -> dict:
     days = max(1, min(int(days), 7))
+    if (location or "").strip().lower() in HERE_WORDS:
+        from .. import context, geo
+        loc = geo.locate(context.current_user())
+        if loc:
+            return _forecast_coords(loc[0], loc[1], f"your location ({loc[2]})", days)
+        return {"error": "no location given and I can't see where you are — "
+                         "name a city, or share a location pin"}
     g = httpx.get(
         "https://geocoding-api.open-meteo.com/v1/search",
         params={"name": location, "count": 1, "language": "en"},
@@ -25,11 +35,16 @@ def forecast(location: str, days: int = 3) -> dict:
     if not g.get("results"):
         return {"error": f"location '{location}' not found"}
     place = g["results"][0]
+    return _forecast_coords(place["latitude"], place["longitude"],
+                            f"{place['name']}, {place.get('country', '')}", days)
+
+
+def _forecast_coords(lat: float, lon: float, label: str, days: int) -> dict:
     f = httpx.get(
         "https://api.open-meteo.com/v1/forecast",
         params={
-            "latitude": place["latitude"],
-            "longitude": place["longitude"],
+            "latitude": lat,
+            "longitude": lon,
             "timezone": "auto",
             "forecast_days": days,
             "current": "temperature_2m,apparent_temperature,weather_code,"
@@ -43,7 +58,7 @@ def forecast(location: str, days: int = 3) -> dict:
     cur = f.get("current", {})
     daily = f.get("daily", {})
     return {
-        "place": f"{place['name']}, {place.get('country', '')}",
+        "place": label,
         "now": {
             "temp_c": cur.get("temperature_2m"),
             "feels_like_c": cur.get("apparent_temperature"),

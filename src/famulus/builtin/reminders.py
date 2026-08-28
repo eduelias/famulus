@@ -186,7 +186,14 @@ class RemindersPlugin(BasePlugin):
             ev = str(args["sun_event"]).lower()
             if ev not in ("sunset", "sunrise"):
                 raise ValueError("sun_event must be 'sunset' or 'sunrise'")
-            geo = _geocode(str(args.get("city") or "Amsterdam"))
+            city = str(args.get("city") or "").strip()
+            if city:
+                geo = _geocode(city)
+            else:
+                from .. import geo as _geo
+                loc = _geo.locate(user)
+                geo = ({"lat": loc[0], "lon": loc[1], "place": f"your location ({loc[2]})"}
+                       if loc else _geocode("Amsterdam"))
             item.update({"kind": "sun", "sun_event": ev, "days": days,
                          "offset_min": int(args.get("offset_minutes", 0) or 0), **geo})
         elif days:
