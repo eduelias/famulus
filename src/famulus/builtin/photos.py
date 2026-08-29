@@ -100,14 +100,17 @@ class PhotosPlugin(BasePlugin):
              "asking user on WhatsApp. people = family member name(s) as tagged, "
              "comma-separated — MULTIPLE names means photos where they appear "
              "TOGETHER ('lily, ben' = both in the same shot). query = free-text "
-             "scene search ('beach', 'birthday cake'); combine to narrow. Set "
+             "scene search ('beach', 'birthday cake') — ALWAYS write the query "
+             "in ENGLISH, translating the user's words (the image search only "
+             "understands English; names in people= stay as tagged). Combine to narrow. Set "
              "recent=true whenever the user says recent/latest/newest — without it, "
              "query results are best-match regardless of age. Omit people+query "
              "for most recent overall. count: keep 1 unless the user asks for more.",
              {"people": {"type": "string",
                          "description": "comma-separated tagged names; multiple = together in one photo"},
               "person": {"type": "string", "description": "single family member (legacy alias)"},
-              "query": {"type": "string", "description": "free-text content search, optional"},
+              "query": {"type": "string",
+                        "description": "free-text content search IN ENGLISH (translate from the user's language), optional"},
               "recent": {"type": "boolean",
                          "description": "true = newest among the matches (user said recent/latest)"},
               "year": {"type": "integer",
