@@ -71,6 +71,9 @@ class BasePlugin:
     gated: set[str] = set()
     persona: str = ""
     model: str = ""
+    # aliases/wording for the router menu that the tool names alone don't carry
+    # (e.g. "MSN"/"Hotmail" → outlook). Empty = tool names speak for themselves.
+    router_hint: str = ""
 
     def context(self, user: str, history: list | None = None) -> str:
         """Per-user memory/params to inject when this plugin is the primary.

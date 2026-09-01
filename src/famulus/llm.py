@@ -116,8 +116,11 @@ async def _route(registry: Registry, user_text: str, allowed: set[str] | None = 
         catalog = {k: v for k, v in catalog.items() if k in allowed}
     if not catalog:
         return None
-    menu = "\n".join(f"- {name}: {', '.join(tools[:10])}"
-                     for name, tools in catalog.items())
+    menu = "\n".join(
+        f"- {name}"
+        + (f" ({registry.hint_of(name)})" if registry.hint_of(name) else "")
+        + f": {', '.join(tools[:10])}"
+        for name, tools in catalog.items())
     ctx = ""
     if recent:
         ctx += f"Recent conversation (oldest→newest):\n{recent}\n"

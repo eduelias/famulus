@@ -60,6 +60,11 @@ class Registry:
                 out[name] = names
         return out
 
+    def hint_of(self, plugin_name: str) -> str:
+        """The plugin's router_hint — aliases/wording the tool names alone don't
+        carry (e.g. 'MSN'/'Hotmail' → outlook), shown in the router's menu."""
+        return getattr(self.plugins.get(plugin_name), "router_hint", "") or ""
+
     def tools_for(self, plugin_names) -> list[dict]:
         """Tool specs owned by the named plugins (for the narrowed agent turn)."""
         want = set(plugin_names)

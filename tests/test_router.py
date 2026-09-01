@@ -270,3 +270,27 @@ def test_sticky_primary_on_ambiguous_followup(monkeypatch):
     asyncio.run(llm.run_agent(r, hist, "ja"))
     assert llm._last_primary["u1"] == "tutor"
     assert "Dutch tutor" in hist[0]["content"]        # tutor persona still active
+
+
+def test_router_hint_lands_in_menu(monkeypatch):
+    class _Mail(BasePlugin):
+        name = "outlook"
+        router_hint = "the owner's Outlook.com / MSN / Hotmail personal mailbox"
+        tools = [spec("outlook_send", "send mail", {}, [])]
+
+        def execute(self, tool, args):
+            return "ok"
+
+    r = Registry([_Weather(), _Mail()])
+    assert "MSN" in r.hint_of("outlook")
+    assert r.hint_of("weather") == ""
+    seen = {}
+
+    async def fake_chat(messages, tools=None, model_override="", fmt=""):
+        seen["menu"] = messages[1]["content"]
+        return {"content": '{"plugins": ["outlook"]}'}
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    chosen = asyncio.run(llm._route(r, "email this via msn"))
+    assert chosen == ["outlook"]
+    assert "MSN" in seen["menu"]
