@@ -65,6 +65,18 @@ async def receive(request: Request):
     return {"status": "ok"}
 
 
+def _document_note(msg: dict) -> str:
+    """The agent's view of a document no plugin claimed: the file's WhatsApp
+    handle plus the caption, so tools that accept a wa_media_id can use it."""
+    doc = msg.get("document", {})
+    note = (f"[User sent a file over WhatsApp: filename={doc.get('filename', '?')!r}, "
+            f"mime_type={doc.get('mime_type', '?')!r}, wa_media_id={doc.get('id', '?')!r}. "
+            "Tools that take a wa_media_id and filename can use this file directly.]")
+    caption = (doc.get("caption") or "").strip()
+    return f"{note}\n{caption}" if caption else (
+        note + "\n[The file came without a caption — ask the user what to do with it.]")
+
+
 async def _handle(msg: dict) -> None:
     mid, sender = msg.get("id"), msg.get("from", "")
     if mid in seen_ids:  # Meta retries webhooks; dedupe
@@ -92,10 +104,17 @@ async def _handle(msg: dict) -> None:
                 log.exception("document handler %s failed", p.name)
                 await wa.send_text(sender, f"⚠️ {p.name} could not process that file: {e}")
             return
+        # No plugin claimed the file — never go silent: hand its WhatsApp
+        # handle + caption to the agent so tools like gmail_send_file can act.
+        text = _document_note(msg)
+    elif msg.get("type") != "text":
+        await wa.send_text(
+            sender,
+            "🤷 I can only work with text and document attachments right now — "
+            f"a {msg.get('type', 'message')} is beyond me.")
         return
-    if msg.get("type") != "text":
-        return
-    text = msg["text"]["body"].strip()
+    else:
+        text = msg["text"]["body"].strip()
 
     # confirmation flow for gated actions
     if sender in pending:

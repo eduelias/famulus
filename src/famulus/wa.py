@@ -9,6 +9,21 @@ GRAPH = "https://graph.facebook.com/v20.0"
 log = logging.getLogger("famulus")
 
 
+def fetch_media(media_id: str) -> tuple[bytes, str]:
+    """Download a WhatsApp media object (sync). Returns (content, mime_type).
+
+    Shared by plugins whose tools accept a wa_media_id — a file the user sent
+    over WhatsApp (Meta keeps media ~30 days; a stale id raises a clear error)."""
+    headers = {"Authorization": f"Bearer {config.WA_TOKEN}"}
+    with httpx.Client(timeout=60) as client:
+        meta = client.get(f"{GRAPH}/{media_id}", headers=headers)
+        meta.raise_for_status()
+        info = meta.json()
+        blob = client.get(info["url"], headers=headers)
+        blob.raise_for_status()
+        return blob.content, info.get("mime_type", "application/octet-stream")
+
+
 async def send_text(to: str, text: str) -> bool:
     """Send a text message. Returns False (and logs Meta's error body) on failure."""
     chunks = [text[i: i + 4000] for i in range(0, len(text), 4000)] or [""]
