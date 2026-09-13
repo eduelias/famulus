@@ -5,6 +5,7 @@ running famulus) can answer when the fast GPU box is asleep or unreachable.
 Gated tools interrupt the loop and return a PendingAction; the caller asks the
 owner for confirmation and executes later.
 """
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -62,17 +63,39 @@ async def _chat(messages: list[dict], tools: list[dict] | None,
     small always-on backstop) still answers instead of failing the whole turn."""
     errors = []
     backends = config.llm_backends()
+    size = sum(len(str(m.get("content") or "")) for m in messages)
     # first pass: the preferred model everywhere; second pass: backend defaults
     passes = [model_override, ""] if model_override else [""]
     tried: set[tuple[str, str]] = set()
     for pref in passes:
-        for url, model in backends:
+        for i, (url, model) in enumerate(backends):
             m = pref or model
             if (url, m) in tried:
                 continue
             tried.add((url, m))
+            if i and config.LLM_BACKSTOP_MAX_CHARS and size > config.LLM_BACKSTOP_MAX_CHARS:
+                # don't hand a research-sized context to the small backstop: it would only
+                # burn LLM_TIMEOUT and fail anyway, delaying the error the owner sees
+                errors.append(f"{url} ({m}): skipped, {size} chars is too large for a backstop")
+                log.warning("LLM backend %s model %s skipped — request too large (%d chars)",
+                            url, m, size)
+                continue
             try:
                 return await _post_chat(url, m, messages, tools, fmt)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code >= 500:
+                    # server-side crash (runner died, GPU OOM): Ollama reloads the model by
+                    # itself, so one short pause and a retry usually gets the answer
+                    log.warning("LLM backend %s model %s returned HTTP %d — retrying once",
+                                url, m, e.response.status_code)
+                    await asyncio.sleep(config.LLM_RETRY_DELAY)
+                    try:
+                        return await _post_chat(url, m, messages, tools, fmt)
+                    except Exception as e2:
+                        e = e2
+                errors.append(f"{url} ({m}): {type(e).__name__}")
+                log.warning("LLM backend %s model %s failed (%s) — trying next",
+                            url, m, type(e).__name__)
             except Exception as e:  # connect error, timeout, 404 model missing, ...
                 errors.append(f"{url} ({m}): {type(e).__name__}")
                 log.warning("LLM backend %s model %s failed (%s) — trying next",
@@ -245,4 +268,14 @@ async def run_agent(registry: Registry, history: list[dict],
                 result = {"error": str(e)}
             history.append({"role": "tool",
                             "content": json.dumps(result, default=str)[:12000]})
-    return "I hit my tool-call limit for one message — try narrowing the request.", None
+    # Out of tool rounds. A canned refusal throws away everything the tools already
+    # fetched (the owner reads it as "never answered"), so ask for a best-effort answer
+    # from the gathered results instead — with tools withheld so the loop must end.
+    history.append({"role": "system", "content": (
+        "You have used all tool calls available for this message. Answer the user now, "
+        "as completely as you can, from the results you already have. Briefly say what "
+        "you could not verify.")})
+    msg = await _chat(history, tools=None, model_override=model_override)
+    history.append(msg)
+    return (msg.get("content") or
+            "I hit my tool-call limit for one message — try narrowing the request."), None

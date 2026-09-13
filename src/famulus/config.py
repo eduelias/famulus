@@ -13,6 +13,14 @@ LLM_NUM_CTX = int(os.environ.get("LLM_NUM_CTX", "16384"))
 # keep this low: a sleeping host drops packets and would otherwise
 # stall the whole failover for the read timeout
 LLM_CONNECT_TIMEOUT = float(os.environ.get("LLM_CONNECT_TIMEOUT", "5"))
+# A crashed model runner (GPU out of memory mid-request → HTTP 5xx) is usually back within
+# seconds because Ollama reloads it; wait this long and retry the same backend once before
+# failing over.
+LLM_RETRY_DELAY = float(os.environ.get("LLM_RETRY_DELAY", "3"))
+# A small always-on backstop cannot chew through a long tool-heavy context before LLM_TIMEOUT
+# (a 1.7B model on a Pi took the full 300 s and still timed out on a 12-tool research turn).
+# Requests bigger than this many characters skip every backend after the first. 0 = never skip.
+LLM_BACKSTOP_MAX_CHARS = int(os.environ.get("LLM_BACKSTOP_MAX_CHARS", "24000"))
 
 # Optional failover chain, tried in order, e.g. a fast GPU box first and a
 # small always-on model on this machine as a backstop:

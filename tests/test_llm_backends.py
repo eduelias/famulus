@@ -86,3 +86,108 @@ def test_model_override_falls_back_to_backend_default(monkeypatch):
     assert seen == [("http://gpu:11434", "llama3.1:8b"),   # preferred, both hosts
                     ("http://pi:11434", "llama3.1:8b"),
                     ("http://gpu:11434", "big")]           # then defaults
+
+
+def _http_error(url, status):
+    import httpx
+    req = httpx.Request("POST", url)
+    return httpx.HTTPStatusError("boom", request=req, response=httpx.Response(status, request=req))
+
+
+def test_chat_retries_same_backend_once_on_5xx(monkeypatch):
+    """A crashed runner (GPU OOM → HTTP 500) is retried after a pause before failing over."""
+    _backends(monkeypatch, "http://gpu:11434|big,http://pi:11434|small")
+    monkeypatch.setattr(config, "LLM_RETRY_DELAY", 0)
+    calls = []
+
+    async def fake_post(url, model, messages, tools, fmt=""):
+        calls.append((url, model))
+        if len(calls) == 1:
+            raise _http_error(url, 500)
+        return {"content": "recovered on " + model}
+
+    monkeypatch.setattr(llm, "_post_chat", fake_post)
+    msg = asyncio.run(llm._chat([{"role": "user", "content": "hi"}], None))
+    assert msg["content"] == "recovered on big"
+    assert calls == [("http://gpu:11434", "big"), ("http://gpu:11434", "big")]
+
+
+def test_chat_does_not_retry_4xx(monkeypatch):
+    _backends(monkeypatch, "http://gpu:11434|big,http://pi:11434|small")
+    calls = []
+
+    async def fake_post(url, model, messages, tools, fmt=""):
+        calls.append(url)
+        if "gpu" in url:
+            raise _http_error(url, 400)
+        return {"content": "small"}
+
+    monkeypatch.setattr(llm, "_post_chat", fake_post)
+    msg = asyncio.run(llm._chat([{"role": "user", "content": "hi"}], None))
+    assert msg["content"] == "small"
+    assert calls == ["http://gpu:11434", "http://pi:11434"]
+
+
+def test_chat_skips_backstop_for_oversized_requests(monkeypatch):
+    """A research-sized context is not handed to the small backstop (it would only time out)."""
+    _backends(monkeypatch, "http://gpu:11434|big,http://pi:11434|small")
+    monkeypatch.setattr(config, "LLM_BACKSTOP_MAX_CHARS", 1000)
+    calls = []
+
+    async def fake_post(url, model, messages, tools, fmt=""):
+        calls.append(url)
+        raise ConnectionError("down")
+
+    monkeypatch.setattr(llm, "_post_chat", fake_post)
+    big = [{"role": "user", "content": "x" * 5000}]
+    with pytest.raises(llm.NoBackendAvailable) as e:
+        asyncio.run(llm._chat(big, None))
+    assert calls == ["http://gpu:11434"]
+    assert "skipped" in str(e.value) and "http://pi:11434" in str(e.value)
+
+
+def test_chat_backstop_still_used_for_small_requests(monkeypatch):
+    _backends(monkeypatch, "http://gpu:11434|big,http://pi:11434|small")
+    monkeypatch.setattr(config, "LLM_BACKSTOP_MAX_CHARS", 1000)
+
+    async def fake_post(url, model, messages, tools, fmt=""):
+        if "gpu" in url:
+            raise ConnectionError("down")
+        return {"content": "small answered"}
+
+    monkeypatch.setattr(llm, "_post_chat", fake_post)
+    msg = asyncio.run(llm._chat([{"role": "user", "content": "short"}], None))
+    assert msg["content"] == "small answered"
+
+
+def test_run_agent_answers_from_gathered_results_when_rounds_run_out(monkeypatch):
+    """Exhausting MAX_TOOL_ROUNDS asks for a best-effort answer instead of a canned refusal."""
+    from famulus.plugins import Registry
+    from famulus.plugins.base import BasePlugin, spec
+
+    class Search(BasePlugin):
+        name = "search"
+        tools = [spec("web_search", "search", {"q": {"type": "string"}}, ["q"])]
+
+        def execute(self, tool, args):
+            return {"hits": [args["q"]]}
+
+    reg = Registry([Search()])
+    monkeypatch.setattr(config, "ROUTER_ENABLED", False)
+    seen = []
+
+    async def fake_chat(messages, tools, model_override="", fmt=""):
+        seen.append(tools)
+        if tools:  # keep asking for a new search every round
+            n = len(seen)
+            return {"role": "assistant", "content": "",
+                    "tool_calls": [{"function": {"name": "web_search", "arguments": {"q": f"q{n}"}}}]}
+        assert messages[-1]["role"] == "system" and "Answer the user now" in messages[-1]["content"]
+        return {"role": "assistant", "content": "Here is what I found so far."}
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    history = []
+    reply, pending = asyncio.run(llm.run_agent(reg, history, "Research crispr"))
+    assert reply == "Here is what I found so far."
+    assert pending is None
+    assert len(seen) == llm.MAX_TOOL_ROUNDS + 1 and seen[-1] is None
