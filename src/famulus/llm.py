@@ -177,6 +177,17 @@ def _wants_coder(text: str) -> bool:
     return bool(config.MODEL_CODER) and text.lower().startswith(("code:", "/code"))
 
 
+async def _final_answer(history: list[dict], model_override: str, result: dict) -> str:
+    """Let the model phrase a final tool result in the user's language, with no
+    tools offered so the turn cannot continue; fall back to the tool's message."""
+    history.append({"role": "system", "content": (
+        "That tool result is final for this request. Tell the user what it says, "
+        "in their language, briefly. Do not offer to do things you cannot do.")})
+    msg = await _chat(history, tools=None, model_override=model_override)
+    history.append(msg)
+    return msg.get("content") or str(result.get("message", ""))
+
+
 async def run_agent(registry: Registry, history: list[dict],
                     user_text: str) -> tuple[str, PendingAction | None]:
     """Returns (reply_text, pending_action_or_None). history is mutated in place."""
@@ -268,6 +279,11 @@ async def run_agent(registry: Registry, history: list[dict],
                 result = {"error": str(e)}
             history.append({"role": "tool",
                             "content": json.dumps(result, default=str)[:12000]})
+            if isinstance(result, dict) and result.get("final"):
+                # the tool says this request is settled (e.g. "nobody by that name"):
+                # small models ignore "don't call again" in the payload and improvise
+                # a second, wrong search — so end the turn here, tools withheld.
+                return await _final_answer(history, model_override, result), None
     # Out of tool rounds. A canned refusal throws away everything the tools already
     # fetched (the owner reads it as "never answered"), so ask for a best-effort answer
     # from the gathered results instead — with tools withheld so the loop must end.

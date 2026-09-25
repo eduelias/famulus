@@ -294,3 +294,35 @@ def test_router_hint_lands_in_menu(monkeypatch):
     chosen = asyncio.run(llm._route(r, "email this via msn"))
     assert chosen == ["outlook"]
     assert "MSN" in seen["menu"]
+
+
+class _Photos(BasePlugin):
+    name = "photos"
+    tools = [spec("photo_search", "send photos", {"people": {"type": "string"}}, [])]
+    calls = 0
+
+    def execute(self, tool, args):
+        type(self).calls += 1
+        return {"sent": 0, "final": True, "message": "Nobody named 'Mavi' is tagged."}
+
+
+def test_final_tool_result_ends_the_turn(monkeypatch):
+    """A 'final' result must stop the loop: the 9B otherwise retries with the name
+    stuffed into a text query and sends unrelated photos."""
+    monkeypatch.setattr("famulus.config.ROUTER_ENABLED", False)
+    r = Registry([_Photos()])
+    offered = []
+
+    async def fake_chat(messages, tools=None, model_override="", fmt=""):
+        offered.append(bool(tools))
+        if tools:   # the model always wants to call again when it may
+            return {"content": "", "tool_calls": [{"function": {
+                "name": "photo_search", "arguments": {"people": f"Lily {len(offered)}"}}}]}
+        return {"content": "A Mavi ainda não está marcada nas fotos."}
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    reply, action = asyncio.run(llm.run_agent(r, [{"role": "system", "content": "s"}],
+                                              "Foto da Lily com Mavi"))
+    assert reply == "A Mavi ainda não está marcada nas fotos." and action is None
+    assert _Photos.calls == 1                 # no second search
+    assert offered == [True, False]           # the closing answer had no tools
