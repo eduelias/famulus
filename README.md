@@ -146,6 +146,18 @@ Install it next to famulus and it's live — no core changes. Tools listed in
 flow automatically. See [src/famulus/plugins/base.py](src/famulus/plugins/base.py)
 for the full contract.
 
+A plugin that serves other people can also:
+
+- set `owner_only = True` so its tools are never granted or shown to anyone but
+  the owner, and `domain_aliases` so the owner can grant it by name
+  ("add 55… only pauta");
+- return `{"final": True, "verbatim": "..."}` to send fixed wording the model
+  must not paraphrase;
+- queue messages from any thread with `famulus.outbox`: `send_text`,
+  `send_template` (approved templates work outside WhatsApp's 24-hour window) and
+  `ask_owner(tool, args, description)`, which puts a gated action in front of the
+  owner, whichever user's message raised it. Only the owner's YES runs it.
+
 ## Security model
 
 - Webhook requests are verified against Meta's `X-Hub-Signature-256` HMAC

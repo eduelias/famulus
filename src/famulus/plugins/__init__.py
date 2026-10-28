@@ -31,6 +31,9 @@ class Registry:
                 continue
             self._tool_owner[tool_name] = p
         self.plugins[p.name] = p
+        from .. import access
+        access.register_plugin(p.name, getattr(p, "domain_aliases", ()) or (),
+                               bool(getattr(p, "owner_only", False)))
         log.info("plugin loaded: %s (%d tools)", p.name, len(p.tools))
 
     @property

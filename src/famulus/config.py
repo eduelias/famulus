@@ -132,9 +132,9 @@ def list_allowed() -> dict:
 
 # Confirmation vocabulary for gated actions (comma-separated, lowercase).
 CONFIRM_WORDS = {w.strip() for w in os.environ.get(
-    "CONFIRM_WORDS", "yes,y,confirm,ok").lower().split(",") if w.strip()}
+    "CONFIRM_WORDS", "yes,y,confirm,ok,sim").lower().split(",") if w.strip()}
 CANCEL_WORDS = {w.strip() for w in os.environ.get(
-    "CANCEL_WORDS", "no,n,cancel").lower().split(",") if w.strip()}
+    "CANCEL_WORDS", "no,n,cancel,não,nao").lower().split(",") if w.strip()}
 
 # ---- Tool routing ----
 # With many plugins a small model can't reliably pick one tool out of dozens, so

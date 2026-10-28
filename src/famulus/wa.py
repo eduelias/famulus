@@ -24,6 +24,26 @@ def fetch_media(media_id: str) -> tuple[bytes, str]:
         return blob.content, info.get("mime_type", "application/octet-stream")
 
 
+async def send_template(to: str, name: str, params: list[str], lang: str = "en") -> bool:
+    """Send an approved template message (works outside the 24-hour window).
+    Returns False (and logs Meta's error body) on failure."""
+    template: dict = {"name": name, "language": {"code": lang}}
+    if params:
+        template["components"] = [{"type": "body", "parameters": [
+            {"type": "text", "text": p} for p in params]}]
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{GRAPH}/{config.WA_PHONE_ID}/messages",
+            headers={"Authorization": f"Bearer {config.WA_TOKEN}"},
+            json={"messaging_product": "whatsapp", "to": to, "type": "template",
+                  "template": template},
+        )
+    if r.status_code >= 400:
+        log.error("WhatsApp template %s to %s failed (%s): %s", name, to, r.status_code, r.text)
+        return False
+    return True
+
+
 async def send_text(to: str, text: str) -> bool:
     """Send a text message. Returns False (and logs Meta's error body) on failure."""
     chunks = [text[i: i + 4000] for i in range(0, len(text), 4000)] or [""]
