@@ -26,3 +26,18 @@ def current_user() -> str:
     """The E.164 (no '+') number of the sender being handled, or '' outside a
     request (e.g. cron/CLI)."""
     return _current_user.get()
+
+
+_current_history: contextvars.ContextVar[list | None] = contextvars.ContextVar(
+    "famulus_current_history", default=None)
+
+
+def set_current_history(history: list | None) -> None:
+    _current_history.set(history)
+
+
+def current_history() -> list:
+    """The conversation being answered (system/user/assistant/tool messages, the
+    incoming user message last), so a tool can quote what the user actually wrote
+    instead of the model's paraphrase. [] outside an agent turn."""
+    return _current_history.get() or []

@@ -74,6 +74,19 @@ class BasePlugin:
     # aliases/wording for the router menu that the tool names alone don't carry
     # (e.g. "MSN"/"Hotmail" → outlook). Empty = tool names speak for themselves.
     router_hint: str = ""
+    # words that name this plugin's domain in owner grant commands ("only pauta"),
+    # besides its name
+    domain_aliases: tuple[str, ...] = ()
+    # never granted to anyone but the owner (like shell/users): its tools are not even
+    # shown to other users' models
+    owner_only: bool = False
+
+    # Optional result keys a tool may return (dict results):
+    #   "final": True   — the request is settled; the model phrases the result and
+    #                     the turn ends with tools withheld.
+    #   "verbatim": str — with "final", send exactly this text instead (fixed
+    #                     wording the model must not paraphrase).
+    # Messages to other users and owner approvals: see famulus.outbox.
 
     def context(self, user: str, history: list | None = None) -> str:
         """Per-user memory/params to inject when this plugin is the primary.

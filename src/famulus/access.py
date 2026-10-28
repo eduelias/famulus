@@ -51,6 +51,16 @@ DOMAIN_ALIASES = {
 _FULL_WORDS = {"all", "everything", "full", "anything", "any"}
 
 
+def register_plugin(name: str, aliases=(), owner_only: bool = False) -> None:
+    """Called by the registry for each loaded plugin: its name (and any aliases it
+    declares) resolve to its domain, and an ``owner_only`` plugin joins OWNER_ONLY
+    so it can never be granted to anyone else."""
+    for word in (name, *aliases):
+        DOMAIN_ALIASES.setdefault(str(word).lower(), name)
+    if owner_only:
+        OWNER_ONLY.add(name)
+
+
 def _load() -> dict:
     try:
         with open(GRANTS_FILE) as f:

@@ -32,6 +32,9 @@ class PendingAction:
     tool: str
     args: dict
     description: str
+    # raised by a plugin through the outbox rather than asked for in this chat
+    # (e.g. another user's request needs the owner's YES)
+    unsolicited: bool = False
 
 
 async def _post_chat(url: str, model: str, messages: list[dict],
@@ -210,7 +213,11 @@ async def run_agent(registry: Registry, history: list[dict],
     # persona instead of mis-routing. Falls back to the plain assistant + the
     # user's full allowed toolset when routing is off/small/unsure.
     primary = ""
-    if config.ROUTER_ENABLED and len(tools) > config.ROUTER_MIN_TOOLS:
+    with_tools = sorted(p for p in allowed if registry.tools_for({p}))
+    if len(with_tools) == 1:
+        # a user granted one domain (e.g. only pauta) talks to that specialist
+        primary = with_tools[0]
+    elif config.ROUTER_ENABLED and len(tools) > config.ROUTER_MIN_TOOLS:
         was = _last_primary.get(user, "")
         chosen = await _route(registry, user_text, allowed,
                               recent=recent_context(history),
@@ -249,6 +256,7 @@ async def run_agent(registry: Registry, history: list[dict],
         history.insert(0, {"role": "system", "content": sys})
 
     history.append({"role": "user", "content": user_text})
+    context.set_current_history(history)
     seen_calls: set[str] = set()
     for _ in range(MAX_TOOL_ROUNDS):
         msg = await _chat(history, tools=tools, model_override=model_override)
@@ -279,6 +287,11 @@ async def run_agent(registry: Registry, history: list[dict],
                 result = {"error": str(e)}
             history.append({"role": "tool",
                             "content": json.dumps(result, default=str)[:12000]})
+            if isinstance(result, dict) and result.get("final") and result.get("verbatim"):
+                # fixed wording the plugin owns (e.g. "pedido registrado (#12)")
+                text = str(result["verbatim"])
+                history.append({"role": "assistant", "content": text})
+                return text, None
             if isinstance(result, dict) and result.get("final"):
                 # the tool says this request is settled (e.g. "nobody by that name"):
                 # small models ignore "don't call again" in the payload and improvise

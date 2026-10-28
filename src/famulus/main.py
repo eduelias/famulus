@@ -1,23 +1,39 @@
 """WhatsApp Cloud API webhook + agent orchestration."""
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import logging
+from collections import deque
 
 from fastapi import FastAPI, Request, Response
 
-from . import admin, chatlog, config, context, llm, wa
+from . import admin, chatlog, config, context, llm, outbox, wa
 from .plugins import load_registry
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("famulus")
-app = FastAPI(title="famulus")
+OUTBOX_INTERVAL = 15  # seconds between outbox drains when no message arrives
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(_app):
+    task = asyncio.create_task(_outbox_loop())
+    yield
+    task.cancel()
+
+
+app = FastAPI(title="famulus", lifespan=_lifespan)
 registry = load_registry()
 
 # per-sender state (single process; see README limitations)
 histories: dict[str, list[dict]] = {}
 pending: dict[str, llm.PendingAction] = {}
 seen_ids: set[str] = set()
+# owner approvals raised by plugins, waiting for the owner's current one to be answered
+owner_queue: deque[llm.PendingAction] = deque()
+
+CONFIRM_PROMPT = "⚠️ Confirmation needed — reply YES to execute, NO to cancel:\n\n"
 
 if not config.WA_APP_SECRET and not config.WA_ALLOW_UNSIGNED:
     log.critical(
@@ -77,7 +93,57 @@ def _document_note(msg: dict) -> str:
         note + "\n[The file came without a caption — ask the user what to do with it.]")
 
 
+async def flush_outbox() -> None:
+    """Send what plugins queued (texts, templates) and put the next owner approval
+    in front of the owner if nothing else is waiting for their answer."""
+    for item in outbox.drain():
+        try:
+            if item["kind"] == "text":
+                await wa.send_text(item["to"], item["text"])
+            elif item["kind"] == "template":
+                await wa.send_template(item["to"], item["name"], item["params"], item["lang"])
+            elif item["kind"] == "approval":
+                owner_queue.append(llm.PendingAction(
+                    item["tool"], item["args"], item["description"], unsolicited=True))
+        except Exception:
+            log.exception("outbox item %s failed", item.get("kind"))
+    owner = config._norm_number(config.OWNER_WA_NUMBER)
+    if owner and owner_queue and owner not in pending:
+        action = owner_queue.popleft()
+        pending[owner] = action
+        await wa.send_text(owner, CONFIRM_PROMPT + action.description)
+
+
+async def _outbox_loop() -> None:
+    while True:
+        await asyncio.sleep(OUTBOX_INTERVAL)
+        try:
+            await flush_outbox()
+        except Exception:
+            log.exception("outbox drain failed")
+
+
+def _parks_approval(sender: str, text: str) -> bool:
+    """An owner approval raised by a plugin that the owner answers with something
+    other than YES/NO goes back to the front of the queue (asked again after this
+    turn), so the message is handled normally and a later "yes" meant for another
+    question can never approve it."""
+    action = pending[sender]
+    low = text.lower()
+    if not action.unsolicited or low in config.CONFIRM_WORDS or low in config.CANCEL_WORDS:
+        return False
+    owner_queue.appendleft(pending.pop(sender))
+    return True
+
+
 async def _handle(msg: dict) -> None:
+    try:
+        await _handle_message(msg)
+    finally:
+        await flush_outbox()
+
+
+async def _handle_message(msg: dict) -> None:
     mid, sender = msg.get("id"), msg.get("from", "")
     if mid in seen_ids:  # Meta retries webhooks; dedupe
         return
@@ -117,7 +183,7 @@ async def _handle(msg: dict) -> None:
         text = msg["text"]["body"].strip()
 
     # confirmation flow for gated actions
-    if sender in pending:
+    if sender in pending and not _parks_approval(sender, text):
         action = pending.pop(sender)
         if text.lower() in config.CONFIRM_WORDS:
             try:
@@ -158,8 +224,7 @@ async def _handle(msg: dict) -> None:
             pending[sender] = llm.PendingAction(tool, args, registry.describe(tool, args))
             await wa.send_text(
                 sender,
-                "⚠️ Confirmation needed — reply YES to execute, NO to cancel:\n\n"
-                + registry.describe(tool, args))
+                CONFIRM_PROMPT + registry.describe(tool, args))
             return
 
     history = histories.setdefault(
@@ -200,8 +265,7 @@ async def _handle(msg: dict) -> None:
         pending[sender] = action
         await wa.send_text(
             sender,
-            "⚠️ Confirmation needed — reply YES to execute, NO to cancel:\n\n"
-            + action.description)
+            CONFIRM_PROMPT + action.description)
     elif reply:
         await wa.send_text(sender, reply)
     else:
