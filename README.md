@@ -151,7 +151,9 @@ for the full contract.
 - Webhook requests are verified against Meta's `X-Hub-Signature-256` HMAC
   (your app secret). Unsigned traffic is rejected unless you explicitly opt
   out for local development.
-- Only numbers in `ALLOWED_WA_NUMBERS` are ever answered.
+- Only numbers in `ALLOWED_WA_NUMBERS` are ever answered by the agent. With
+  `LEAD_INTAKE=on`, anyone else gets one fixed `LEAD_REPLY` a day and their
+  message is forwarded to the owner (rate-limited; no model, no tools, no history).
 - Tool output (web pages, emails) is treated as untrusted data in the system
   prompt: content is summarized, instructions inside it are not followed.
 - Gated actions require a fresh YES from the owner, per action.

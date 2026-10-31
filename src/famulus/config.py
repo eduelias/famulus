@@ -62,6 +62,17 @@ ALLOWED_WA_NUMBERS = [
 OWNER_WA_NUMBER = (os.environ.get("OWNER_WA_NUMBER", "").strip()
                    or (ALLOWED_WA_NUMBERS[0] if ALLOWED_WA_NUMBERS else ""))
 
+# Lead intake (leads.py): what to do with a message from a number that isn't allowlisted.
+# Off by default: such messages are dropped. On: a fixed reply (LEAD_REPLY, a literal \n for
+# line breaks) at most once a day per number, and the message forwarded to the owner. Strangers
+# never reach the agent or its tools.
+LEAD_INTAKE = os.environ.get("LEAD_INTAKE", "").lower() in ("1", "true", "on", "yes")
+LEAD_LABEL = os.environ.get("LEAD_LABEL", "New contact")
+LEAD_REPLY = os.environ.get(
+    "LEAD_REPLY",
+    "Hi! Thanks for your message. This number is an automated assistant; "
+    "the owner has your message and will get back to you.").replace("\\n", "\n")
+
 # Runtime-added numbers live here (JSON: {"<number>": "<label>"}).
 ALLOWLIST_FILE = os.environ.get(
     "ALLOWLIST_FILE", os.path.join(os.environ.get("DATA_DIR", "/data"), "allowed_numbers.json"))

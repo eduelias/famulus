@@ -6,7 +6,7 @@ import logging
 
 from fastapi import FastAPI, Request, Response
 
-from . import admin, chatlog, config, context, llm, wa
+from . import admin, chatlog, config, context, leads, llm, wa
 from .plugins import load_registry
 
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +18,7 @@ registry = load_registry()
 histories: dict[str, list[dict]] = {}
 pending: dict[str, llm.PendingAction] = {}
 seen_ids: set[str] = set()
+lead_intake = leads.LeadIntake()
 
 if not config.WA_APP_SECRET and not config.WA_ALLOW_UNSIGNED:
     log.critical(
@@ -60,8 +61,11 @@ async def receive(request: Request):
     body = _json.loads(raw or b"{}")
     for entry in body.get("entry", []):
         for change in entry.get("changes", []):
-            for msg in change.get("value", {}).get("messages", []) or []:
-                await _handle(msg)
+            value = change.get("value", {})
+            names = {c.get("wa_id"): (c.get("profile") or {}).get("name", "")
+                     for c in value.get("contacts", []) or []}
+            for msg in value.get("messages", []) or []:
+                await _handle(msg, names.get(msg.get("from"), ""))
     return {"status": "ok"}
 
 
@@ -77,13 +81,28 @@ def _document_note(msg: dict) -> str:
         note + "\n[The file came without a caption — ask the user what to do with it.]")
 
 
-async def _handle(msg: dict) -> None:
+async def _lead(msg: dict, sender: str, name: str) -> None:
+    """A stranger's message: never the agent. A fixed reply and a forward to the owner."""
+    reply, forward = lead_intake.handle(config._norm_number(sender), name, msg)
+    if forward is None:
+        log.warning("lead intake: rate limit reached, dropping message from %s", sender)
+        return
+    log.info("lead intake: forwarding message from %s", sender)
+    await wa.send_text(config._norm_number(config.OWNER_WA_NUMBER), forward)
+    if reply:
+        await wa.send_text(sender, reply)
+
+
+async def _handle(msg: dict, name: str = "") -> None:
     mid, sender = msg.get("id"), msg.get("from", "")
     if mid in seen_ids:  # Meta retries webhooks; dedupe
         return
     seen_ids.add(mid)
     if config._norm_number(sender) not in config.allowed_numbers():
-        log.warning("ignoring message from non-allowlisted %s", sender)
+        if config.LEAD_INTAKE and config.OWNER_WA_NUMBER:
+            await _lead(msg, sender, name)
+        else:
+            log.warning("ignoring message from non-allowlisted %s", sender)
         return
     # expose the sender to plugins (per-user state, owner checks) for this message
     context.set_current_user(config._norm_number(sender))
