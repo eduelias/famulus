@@ -14,7 +14,7 @@
 # keeps v* tags the owner's too, so these two run the owner's own code. A fork's pull
 # request runs as refs/pull/N/merge and is refused here, whatever its workflow says.
 #
-# Lives at /usr/local/lib/famulus/runner-job-guard (root:root 0755); see deploy/README.md.
+# Lives at /usr/local/lib/famulus/runner-job-guard.sh (root:root 0755); see deploy/README.md.
 set -u
 
 REPO=eduelias/famulus

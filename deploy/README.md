@@ -55,7 +55,8 @@ cd ~/famulus-stack && docker compose build --no-cache famulus && docker compose 
   checks every argument.
 - **Job guard.** This repository is public, and a self-hosted runner runs whatever a
   workflow tells it to. A systemd drop-in makes the runner call
-  `/usr/local/lib/famulus/runner-job-guard` before every job. The guard refuses everything
+  `/usr/local/lib/famulus/runner-job-guard.sh` before every job. (The runner only runs a hook whose
+  name ends in `.sh`.) The guard refuses everything
   except job `du7` of `release.yml` on a `v*` tag push, and of `deploy.yml` run by hand on
   `main`. Refusals go to the journal (`journalctl -t famulus-runner-guard`).
 - **Repository settings** (GitHub): a "release tags" ruleset so that only the owner

@@ -51,14 +51,14 @@ mv "$rule.tmp" "$rule"
 # Root-owned, outside the runner's own (gh-runner-writable) directory, and set through a
 # systemd drop-in, so no job can switch it off for the jobs after it.
 install -d -o root -g root -m 0755 /usr/local/lib/famulus
-install -o root -g root -m 0755 "$HERE/runner-job-guard" /usr/local/lib/famulus/runner-job-guard
+install -o root -g root -m 0755 "$HERE/runner-job-guard" /usr/local/lib/famulus/runner-job-guard.sh
 unit=actions.runner.eduelias-famulus.du7-famulus.service
 guard() {
     install -d -o root -g root -m 0755 "/etc/systemd/system/$unit.d"
     cat > "/etc/systemd/system/$unit.d/job-guard.conf" <<EOF
-# Every job on du7 first passes /usr/local/lib/famulus/runner-job-guard (deploy/README.md).
+# Every job on du7 first passes /usr/local/lib/famulus/runner-job-guard.sh (deploy/README.md).
 [Service]
-Environment=ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/lib/famulus/runner-job-guard
+Environment=ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/lib/famulus/runner-job-guard.sh
 EOF
     systemctl daemon-reload
 }
