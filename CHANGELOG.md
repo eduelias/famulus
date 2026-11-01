@@ -8,6 +8,8 @@ pushing the tag tests, publishes and deploys it to du7 (`deploy/README.md`).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-01
+
 ### Added
 
 - Releases: a `vX.Y.Z` tag runs CI, publishes the wheel on GitHub with these notes and
@@ -23,3 +25,6 @@ pushing the tag tests, publishes and deploys it to du7 (`deploy/README.md`).
 - A reminder due while WhatsApp could not deliver it was dropped instead of retried (#3).
 - A turn that failed mid-way (no LLM backend, or any agent error) left its half-finished
   tool rounds in the conversation history; the whole turn is dropped now.
+
+[Unreleased]: https://github.com/eduelias/famulus/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/eduelias/famulus/releases/tag/v0.3.0
