@@ -1,0 +1,108 @@
+# Put a published release on du7. Runs after every release, and by hand (Actions → Deploy →
+# Run workflow) to redeploy or roll back to any earlier version.
+#
+# The du7 job runs on the self-hosted runner as `gh-runner`, which may run exactly one
+# command as root: /usr/local/sbin/famulus-deploy (deploy/famulus-deploy in this repo). That
+# script rebuilds the famulus image around the release's wheel, switches the container,
+# checks /health and rolls back on failure. The runner refuses every other job
+# (deploy/runner-job-guard): this repository is public.
+name: Deploy
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release to put on du7 (X.Y.Z, without the v)
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    name: Fetch v${{ inputs.version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download the release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version: $VERSION"; exit 1; }
+          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" --dir bundle \
+            --pattern "famulus-$VERSION-py3-none-any.whl" --pattern SHA256SUMS
+          cd bundle && sha256sum -c --ignore-missing SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deploy-bundle-${{ inputs.version }}
+          path: bundle/
+          retention-days: 7
+
+  du7:
+    name: du7 → famulus container
+    needs: fetch
+    runs-on: [self-hosted, du7, famulus]
+    timeout-minutes: 20
+    environment:
+      name: production
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: deploy-bundle-${{ inputs.version }}
+          path: bundle
+      - name: Rebuild the image, switch, health check (rolls back on failure)
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          sudo -n /usr/local/sbin/famulus-deploy "$VERSION" \
+            "bundle/famulus-$VERSION-py3-none-any.whl" bundle/SHA256SUMS
+      - name: famulus answers with the new version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          live=$(curl -fsS localhost:8090/health | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')
+          [ "$live" = "$VERSION" ] || { echo "famulus says ${live:-nothing}, expected $VERSION"; exit 1; }
+          {
+            echo "### du7 is on $VERSION"
+            echo '```'
+            sudo -n /usr/local/sbin/famulus-deploy --status
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  alert:
+    name: WhatsApp if the deploy failed
+    needs: [fetch, du7]
+    # a deploy started by a release is reported by release.yml's own alert job
+    if: failure() && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    # the WhatsApp secrets live in the `alerts` environment: main and release tags only
+    environment: alerts
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/alert.py
+          sparse-checkout-cone-mode: false
+      - name: Send the alert template
+        env:
+          WA_TOKEN: ${{ secrets.WA_TOKEN }}
+          WA_PHONE_ID: ${{ secrets.WA_PHONE_ID }}
+          WA_TO: ${{ secrets.WA_TO }}
+          WA_TEMPLATE: ${{ vars.WA_TEMPLATE }}
+          VERSION: ${{ inputs.version }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STAGES: fetch ${{ needs.fetch.result }}, du7 ${{ needs.du7.result }}
+        run: |
+          python3 scripts/alert.py "famulus deploy $VERSION" \
+            "failed ($STAGES). A failed deploy rolls back to the previous release. $RUN"

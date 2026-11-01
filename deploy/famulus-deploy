@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# Put a famulus release on du7: rebuild the famulus image around the release's wheel, switch
+# the container to it, and roll back if it doesn't answer /health with the new version.
+#
+#   famulus-deploy X.Y.Z WHEEL SHA256SUMS   build release X.Y.Z and switch to it
+#   famulus-deploy --rollback               switch back to the release before the current one
+#   famulus-deploy --status                 what is live and what is kept
+#
+# Lives at /usr/local/sbin/famulus-deploy (root:root 0755). The GitHub runner user may run it
+# with sudo and nothing else, so every argument is checked here; see deploy/README.md.
+#
+# famulus runs from the docker compose stack in ~esaleh/famulus-stack (with searxng and the
+# plugin sidecars). Its Dockerfile installs the one wheel in release/current/ together with
+# the plugins from their main branches, so a release is that wheel plus a rebuild:
+#
+#   ~/famulus-stack/release/X.Y.Z/famulus-X.Y.Z-py3-none-any.whl   every release kept
+#   ~/famulus-stack/release/current/                               the wheel the image installs
+#   ~/famulus-stack/release/{current,previous}.version             what is live, what --rollback picks
+#   ~/famulus-stack/release/deploy.log                             one line per deploy and rollback
+#   image famulus-stack-famulus:X.Y.Z                              each release's image; :latest is live
+set -euo pipefail
+umask 022
+
+STACK=/home/esaleh/famulus-stack
+REL=$STACK/release
+SERVICE=famulus                    # the compose service and its container_name
+IMAGE=famulus-stack-famulus        # what `docker compose build` tags (:latest)
+SERVICE_USER=esaleh
+HEALTH=http://127.0.0.1:8090/health
+KEEP=5                             # release images and wheels kept (live and previous never pruned)
+PYTHON=/usr/bin/python3
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+
+log() { echo "famulus-deploy: $*" >&2; }
+die() { log "$*"; exit 1; }
+record() {  # deploy.log, and the journal (journalctl -t famulus-deploy); FAILED is an error
+    echo "$(date -Is) $*" >> "$REL/deploy.log"
+    chown "$SERVICE_USER:" "$REL/deploy.log"
+    logger -t famulus-deploy -p "user.$([[ $* == FAILED* ]] && echo err || echo notice)" -- "$*" || true
+}
+compose() { (cd "$STACK" && docker compose "$@"); }
+read_version() { cat "$REL/$1.version" 2>/dev/null || echo none; }
+write_version() { echo "$2" > "$REL/$1.version"; chown "$SERVICE_USER:" "$REL/$1.version"; }
+
+health_version() {  # the version /health reports within ~60 s (famulus loads every plugin first)
+    local out
+    for _ in $(seq 120); do
+        if out=$(curl -fsS --max-time 2 "$HEALTH" 2>/dev/null); then
+            "$PYTHON" -c 'import json,sys; d=json.load(sys.stdin); print(d.get("version", "") if d.get("ok") else "")' <<<"$out"
+            return 0
+        fi
+        sleep 0.5
+    done
+    return 1
+}
+
+stage_wheel() {  # VERSION: make release/current/ hold exactly that release's wheel
+    local whl=$REL/$1/famulus-$1-py3-none-any.whl
+    [ -f "$whl" ] || die "no wheel kept for $1"
+    rm -rf "$REL/current.new"
+    install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$REL/current.new"
+    install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0644 "$whl" "$REL/current.new/"
+    rm -rf "$REL/current"
+    mv -T "$REL/current.new" "$REL/current"
+}
+
+run_image() {  # TAG: make it :latest and recreate the container on it (no rebuild)
+    docker tag "$IMAGE:$1" "$IMAGE:latest"
+    compose up -d --no-build "$SERVICE" >&2
+}
+
+prune() {  # keep the newest $KEEP releases, and always the live and previous ones
+    local live prev v
+    live=$(read_version current)
+    prev=$(read_version previous)
+    # release dirs are only ever named X.Y.Z (checked in main), so ls is safe here
+    # shellcheck disable=SC2010
+    ls -1 "$REL" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | head -n "-$KEEP" | while read -r v; do
+        [ "$v" = "$live" ] || [ "$v" = "$prev" ] && continue
+        rm -rf "${REL:?}/$v"
+        docker image rm "$IMAGE:$v" >/dev/null 2>&1 || true
+        log "pruned $v"
+    done
+}
+
+status() {
+    echo "live:     $(read_version current)"
+    echo "previous: $(read_version previous)"
+    echo "health:   $(curl -fsS --max-time 3 "$HEALTH" 2>/dev/null || echo 'not answering')"
+    docker ps --filter "name=^$SERVICE\$" --format 'container: {{.Names}} {{.Status}} ({{.Image}})'
+    echo "kept:     $(docker image ls "$IMAGE" --format '{{.Tag}}' | grep -v latest | sort -V | tr '\n' ' ')"
+    echo "recent deploys:"
+    tail -n 5 "$REL/deploy.log" 2>/dev/null | sed 's/^/  /' || true
+}
+
+deploy() {  # VERSION WHEEL SUMS
+    local version=$1 wheel=$2 sums=$3 name prev live
+    [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "bad version: $version"
+    name=famulus-$version-py3-none-any.whl
+    [ "$(basename -- "$wheel")" = "$name" ] || die "expected $name, got $(basename -- "$wheel")"
+    [ -f "$wheel" ] && [ ! -L "$wheel" ] || die "not a file: $wheel"
+    [ -f "$sums" ] && [ ! -L "$sums" ] || die "not a file: $sums"
+    grep -E "^[0-9a-f]{64}  $name\$" "$sums" | (cd "$(dirname -- "$wheel")" && sha256sum -c --quiet -) \
+        || die "$name does not match SHA256SUMS"
+    [ -f "$STACK/docker-compose.yml" ] || die "no compose stack at $STACK"
+    grep -q 'release/current' "$STACK/Dockerfile" \
+        || die "$STACK/Dockerfile does not install release/current/ (deploy/README.md)"
+
+    install -d -o "$SERVICE_USER" -g "$SERVICE_USER" "$REL" "$REL/$version"
+    install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 0644 "$wheel" "$REL/$version/$name"
+    prev=$(read_version current)
+    # the image running now is what a failed switch goes back to; before the first release
+    # it has no version of its own, so it is kept as :pre-release
+    if [ "$prev" = none ]; then
+        prev=pre-release
+        docker image inspect "$IMAGE:latest" >/dev/null 2>&1 && docker tag "$IMAGE:latest" "$IMAGE:$prev"
+    fi
+
+    log "building $IMAGE:$version (plugins from their main branches)"
+    stage_wheel "$version"
+    if ! compose build --pull "$SERVICE" >&2; then
+        [ "$prev" != pre-release ] && stage_wheel "$prev"
+        record "FAILED build $version; still on $prev"
+        die "image build failed; nothing switched"
+    fi
+    docker tag "$IMAGE:latest" "$IMAGE:$version"
+
+    log "switching to $version"
+    compose up -d --no-build "$SERVICE" >&2
+    live=$(health_version || true)
+    if [ "$live" = "$version" ]; then
+        [ "$prev" != pre-release ] && write_version previous "$prev"
+        write_version current "$version"
+        record "deployed $version (was $prev)"
+        prune
+        log "live: $version"
+        return 0
+    fi
+
+    log "/health says '${live:-nothing}', expected $version: rolling back to $prev"
+    docker logs --tail 40 "$SERVICE" >&2 || true
+    [ "$prev" != pre-release ] && stage_wheel "$prev"
+    run_image "$prev"
+    record "FAILED deploy $version (health said '${live:-nothing}'); rolled back to $prev"
+    die "deploy of $version failed; back on $prev"
+}
+
+rollback() {
+    local live prev now
+    live=$(read_version current)
+    prev=$(read_version previous)
+    [ "$prev" != none ] || die "no previous release to go back to"
+    docker image inspect "$IMAGE:$prev" >/dev/null 2>&1 || die "image $IMAGE:$prev is gone"
+    stage_wheel "$prev"
+    run_image "$prev"
+    now=$(health_version || true)
+    [ "$now" = "$prev" ] || die "after rollback /health says '${now:-nothing}', expected $prev"
+    write_version current "$prev"
+    write_version previous "$live"
+    record "rolled back $live -> $prev"
+    log "live: $prev"
+}
+
+[ "$(id -u)" -eq 0 ] || die "run as root (sudo -n $0 ...)"
+case "${1:-}" in
+    --status) status ;;
+    --rollback) rollback ;;
+    -*|"") die "usage: famulus-deploy X.Y.Z WHEEL SHA256SUMS | --rollback | --status" ;;
+    *) [ $# -eq 3 ] || die "usage: famulus-deploy X.Y.Z WHEEL SHA256SUMS"; deploy "$1" "$2" "$3" ;;
+esac

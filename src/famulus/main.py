@@ -6,7 +6,7 @@ import logging
 
 from fastapi import FastAPI, Request, Response
 
-from . import admin, chatlog, config, context, leads, llm, wa
+from . import __version__, admin, chatlog, config, context, leads, llm, wa
 from .plugins import load_registry
 
 logging.basicConfig(level=logging.INFO)
@@ -47,7 +47,7 @@ async def verify(request: Request):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "plugins": sorted(registry.plugins),
+    return {"ok": True, "version": __version__, "plugins": sorted(registry.plugins),
             "tools": len(registry.tools)}
 
 

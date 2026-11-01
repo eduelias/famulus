@@ -1,0 +1,99 @@
+# Push a tag vX.Y.Z (scripts/release.py cut X.Y.Z --push) and this runs the full CI, builds
+# the wheel, publishes it on GitHub with its CHANGELOG notes, then deploys it to du7.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish ${{ github.ref_name }}
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the previous tag, for the compare link
+      - name: Tag, pyproject and CHANGELOG agree
+        id: version
+        run: echo "version=$(python3 scripts/release.py check-tag "$GITHUB_REF_NAME")" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: Release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 scripts/release.py notes "$VERSION" > notes.md
+          prev=$(git tag --list 'v*' --sort=-v:refname | grep -vx "$GITHUB_REF_NAME" | head -1 || true)
+          {
+            echo
+            echo "---"
+            echo "Deployed to du7 by the *Deploy* job of this run."
+            if [ -n "$prev" ]; then
+              echo "Full diff: https://github.com/$GITHUB_REPOSITORY/compare/$prev...$GITHUB_REF_NAME"
+            fi
+          } >> notes.md
+          cat notes.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          (cd dist && sha256sum -c SHA256SUMS)
+          # releases are immutable once published: attach everything to a draft, then publish
+          gh release create "$GITHUB_REF_NAME" dist/* --draft \
+            --verify-tag --title "famulus $VERSION" --notes-file notes.md
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+
+  deploy:
+    name: Deploy
+    needs: publish
+    uses: ./.github/workflows/deploy.yml
+    with:
+      version: ${{ needs.publish.outputs.version }}
+
+  alert:
+    name: WhatsApp if the release failed
+    needs: [ci, publish, deploy]
+    if: failure()
+    runs-on: ubuntu-latest
+    # the WhatsApp secrets live in the `alerts` environment: main and release tags only
+    environment: alerts
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/alert.py
+          sparse-checkout-cone-mode: false
+      - name: Send the alert template
+        env:
+          WA_TOKEN: ${{ secrets.WA_TOKEN }}
+          WA_PHONE_ID: ${{ secrets.WA_PHONE_ID }}
+          WA_TO: ${{ secrets.WA_TO }}
+          WA_TEMPLATE: ${{ vars.WA_TEMPLATE }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          STAGES: >-
+            CI ${{ needs.ci.result }}, publish ${{ needs.publish.result }},
+            deploy ${{ needs.deploy.result }}
+        run: |
+          python3 scripts/alert.py "famulus release $GITHUB_REF_NAME" \
+            "failed ($STAGES). A failed deploy rolls back to the previous release. $RUN"

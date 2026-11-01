@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# The du7 runner's job-started hook: refuse every job except the famulus deploy.
+#
+# A self-hosted runner runs whatever a workflow says, for anyone who can make a workflow
+# run: a collaborator pushing a branch, or (in a public repo) a pull request from a fork.
+# The runner calls this before each job (ACTIONS_RUNNER_HOOK_JOB_STARTED, set in a
+# root-owned systemd drop-in); a non-zero exit fails the job before any of its steps run.
+#
+# Allowed, and nothing else:
+#   - job `du7` of release.yml, run by pushing a release tag vX.Y.Z (only the owner may)
+#   - job `du7` of deploy.yml, run by hand (workflow_dispatch) from main, to redeploy or
+#     roll back to a published release
+# famulus has no collaborators: only the owner pushes main, and the "release tags" ruleset
+# keeps v* tags the owner's too, so these two run the owner's own code. A fork's pull
+# request runs as refs/pull/N/merge and is refused here, whatever its workflow says.
+#
+# Lives at /usr/local/lib/famulus/runner-job-guard (root:root 0755); see deploy/README.md.
+set -u
+
+REPO=eduelias/famulus
+WF=$REPO/.github/workflows
+
+refuse() {
+    echo "runner-job-guard: refusing this job on du7: $*" >&2
+    logger -t famulus-runner-guard -p user.warning -- "refused: $* (repo=${GITHUB_REPOSITORY:-?} workflow=${GITHUB_WORKFLOW_REF:-?} job=${GITHUB_JOB:-?} event=${GITHUB_EVENT_NAME:-?} actor=${GITHUB_ACTOR:-?})" 2>/dev/null || true
+    exit 1
+}
+
+[ "${GITHUB_REPOSITORY:-}" = "$REPO" ] || refuse "not $REPO"
+[ "${GITHUB_JOB:-}" = du7 ] || refuse "only the deploy job (du7) runs here"
+ref=${GITHUB_WORKFLOW_REF:-}
+event=${GITHUB_EVENT_NAME:-}
+tag_re="^$WF/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$"
+if [[ $ref =~ $tag_re ]] && [ "$event" = push ]; then
+    :
+elif [ "$ref" = "$WF/deploy.yml@refs/heads/main" ] && [ "$event" = workflow_dispatch ]; then
+    :
+else
+    refuse "only release.yml on a release tag, or deploy.yml run by hand on main"
+fi
+logger -t famulus-runner-guard -p user.notice -- "allowed: $ref ($event, ${GITHUB_ACTOR:-?})" 2>/dev/null || true
+echo "runner-job-guard: $ref ($event) may deploy"
