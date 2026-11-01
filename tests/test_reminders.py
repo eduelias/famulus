@@ -126,3 +126,51 @@ def test_tick_survives_bad_item(monkeypatch):
     lines = rem.tick()
     assert any("ERROR" in ln for ln in lines)          # bad one reported
     assert any("#1" in ln for ln in lines)             # good one still fired
+
+
+def test_sun_time_uses_the_places_zone_not_ours(monkeypatch):
+    # Open-Meteo with timezone=auto answers in the place's wall-clock time
+    answer = {"timezone": "America/New_York", "utc_offset_seconds": -14400,
+              "daily": {"time": ["2026-08-26", "2026-08-27"],
+                        "sunset": ["2026-08-26T19:35", "2026-08-27T19:33"]}}
+
+    class Resp:
+        def json(self):
+            return answer
+
+    monkeypatch.setattr(rem.httpx, "get", lambda *a, **k: Resp())
+    item = {"lat": 40.71, "lon": -74.0, "sun_event": "sunset"}
+    target = rem._sun_time(item, dt.date(2026, 8, 26))
+    assert target == dt.datetime(2026, 8, 27, 1, 35, tzinfo=rem.TZ)  # 19:35 EDT
+    # the cached path gives the same instant without refetching
+    monkeypatch.setattr(rem.httpx, "get", lambda *a, **k: pytest.fail("refetched"))
+    assert rem._sun_time(item, dt.date(2026, 8, 26)) == target
+
+
+def test_sun_time_refetches_a_cache_without_zone(monkeypatch):
+    calls = []
+
+    class Resp:
+        def json(self):
+            calls.append(1)
+            return {"utc_offset_seconds": 7200,
+                    "daily": {"time": ["2026-08-26"], "sunset": ["2026-08-26T20:45"]}}
+
+    monkeypatch.setattr(rem.httpx, "get", lambda *a, **k: Resp())
+    item = {"lat": 52.37, "lon": 4.9, "sun_event": "sunset",
+            "sun_cache": {"date": "2026-08-26", "iso": "2026-08-26T20:45"}}
+    target = rem._sun_time(item, dt.date(2026, 8, 26))
+    assert calls == [1]                                # old cache had no zone
+    assert target == dt.datetime(2026, 8, 26, 20, 45, tzinfo=rem.TZ)
+
+
+def test_failed_send_keeps_reminder_due(monkeypatch):
+    _p().execute("reminder_set", {"text": "tea", "at": "21:30"})
+    monkeypatch.setattr(rem, "_now",
+                        lambda: dt.datetime(2026, 8, 26, 21, 31, tzinfo=rem.TZ))
+    monkeypatch.setattr(rem, "_send", lambda u, t: False)   # WhatsApp down
+    assert rem.tick()[0].endswith("sent=False")
+    sent = []
+    monkeypatch.setattr(rem, "_send", lambda u, t: sent.append(t) or True)
+    assert len(rem.tick()) == 1 and "tea" in sent[0]    # retried next tick
+    assert rem.tick() == []                             # then done

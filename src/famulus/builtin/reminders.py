@@ -92,7 +92,7 @@ def _geocode(city: str) -> dict:
 def _sun_time(item: dict, day: dt.date) -> dt.datetime | None:
     """Today's sunrise/sunset for the reminder's place, cached per day."""
     cache = item.get("sun_cache") or {}
-    if cache.get("date") != day.isoformat():
+    if cache.get("date") != day.isoformat() or "tz" not in cache:
         f = httpx.get("https://api.open-meteo.com/v1/forecast",
                       params={"latitude": item["lat"], "longitude": item["lon"],
                               "daily": "sunrise,sunset", "timezone": "auto",
@@ -104,13 +104,27 @@ def _sun_time(item: dict, day: dt.date) -> dt.datetime | None:
             iso = daily[item["sun_event"]][idx]
         except (KeyError, ValueError, IndexError):
             return None
-        item["sun_cache"] = {"date": day.isoformat(), "iso": iso}
+        # timezone=auto gives wall-clock times at the reminder's place, not ours
+        item["sun_cache"] = cache = {"date": day.isoformat(), "iso": iso,
+                                     "tz": f.get("timezone"),
+                                     "utc_offset": f.get("utc_offset_seconds")}
     else:
         iso = cache["iso"]
     base = dt.datetime.fromisoformat(iso)
-    if base.tzinfo is None:  # Open-Meteo returns local time for timezone=auto
-        base = base.replace(tzinfo=TZ)
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=_place_tz(cache))
     return base + dt.timedelta(minutes=int(item.get("offset_min", 0)))
+
+
+def _place_tz(cache: dict) -> dt.tzinfo:
+    """The reminder place's zone from the Open-Meteo answer; ours only as a last resort."""
+    try:
+        return ZoneInfo(cache["tz"])
+    except (KeyError, TypeError, ValueError):
+        pass
+    if cache.get("utc_offset") is not None:
+        return dt.timezone(dt.timedelta(seconds=int(cache["utc_offset"])))
+    return TZ
 
 
 def _fmt(item: dict) -> str:
@@ -264,9 +278,10 @@ def tick() -> list[str]:
             if due:
                 icon = {"sunset": "🌇", "sunrise": "🌅"}.get(item.get("sun_event", ""), "⏰")
                 ok = _send(item["user"], f"{icon} Reminder: {item['text']}")
-                item["last_fired"] = today.isoformat()
-                if deactivate:
-                    item["active"] = False
+                if ok:  # a failed send stays due, so the next tick retries it
+                    item["last_fired"] = today.isoformat()
+                    if deactivate:
+                        item["active"] = False
                 changed = True
                 fired.append(f"#{item['id']} -> {item['user']} sent={ok}")
         except Exception as e:  # one bad reminder must not block the rest
