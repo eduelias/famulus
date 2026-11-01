@@ -38,9 +38,14 @@ Restarting the container drops in-flight conversations and pending confirmations
 - What is live: `sudo famulus-deploy --status`; history in `~/famulus-stack/release/deploy.log`
   and `journalctl -t famulus-deploy`.
 
-A plain `docker compose up -d --build` in the stack still works and rebuilds the live
-release (the wheel in `release/current/`) with the plugins' latest `main`. Plugin changes
-are picked up that way, or by the next famulus release.
+Plugins install from their `main` branches whenever the image is rebuilt, so every famulus
+release picks up their latest. To roll out a plugin change without a famulus release,
+rebuild the live release (the wheel in `release/current/`) past Docker's cache, which would
+otherwise keep the old plugin install:
+
+```bash
+cd ~/famulus-stack && docker compose build --no-cache famulus && docker compose up -d famulus
+```
 
 ## How du7 is set up
 
