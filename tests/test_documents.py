@@ -5,7 +5,6 @@ from famulus import config, llm
 from famulus import main as fmain
 from famulus.main import _document_note
 
-
 DOC_MSG = {
     "id": "wamid.test-doc-1",
     "from": "31600000001",

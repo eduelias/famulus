@@ -39,7 +39,7 @@ class FamilyPlugin(BasePlugin):
         if not loc:
             return {"person": name, "location": "unknown",
                     "message": "their phone isn't reporting a location right now"}
-        lat, lon, zone = loc
+        _lat, _lon, zone = loc
         return {"person": name, "zone": zone,
                 "note": "zone 'home' = at home; other values are HA zone names "
                         "or 'not_home' (away)"}

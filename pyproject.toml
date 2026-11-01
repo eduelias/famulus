@@ -28,7 +28,7 @@ Homepage = "https://github.com/eduelias/famulus"
 Issues = "https://github.com/eduelias/famulus/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.5"]
+dev = ["pytest>=8", "ruff==0.16.3"]  # pinned: CI and local agree on the rules
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/famulus"]
