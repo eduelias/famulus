@@ -8,6 +8,13 @@ pushing the tag tests, publishes and deploys it to du7 (`deploy/README.md`).
 
 ## [Unreleased]
 
+### Added
+
+- Wake-on-LAN for backends on a machine that sleeps: list it in `WOL_HOSTS` (`ip=mac`) and
+  famulus sends a magic packet before the first request that finds the backend down, waits
+  up to `WOL_WAIT` seconds for it, and only then falls back to the next backend. Hosts are
+  woken at most once per `WOL_COOLDOWN` seconds. `famulus.wol` is shared with plugins.
+
 ## [0.3.0] - 2026-11-01
 
 ### Added

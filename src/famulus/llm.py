@@ -1,7 +1,9 @@
 """Agent loop: Ollama chat with tool calling, over one or more backends.
 
 Backends are tried in order, so a small always-on model (e.g. on the machine
-running famulus) can answer when the fast GPU box is asleep or unreachable.
+running famulus) can answer when the fast GPU box is asleep or unreachable. A GPU
+box listed in WOL_HOSTS is woken first (famulus.wol) and only skipped when it
+does not come up in time.
 Gated tools interrupt the loop and return a PendingAction; the caller asks the
 owner for confirmation and executes later.
 """
@@ -12,7 +14,7 @@ from dataclasses import dataclass
 
 import httpx
 
-from . import access, config, context
+from . import access, config, context, wol
 from .plugins import Registry
 
 MAX_TOOL_ROUNDS = 6
@@ -79,6 +81,12 @@ async def _chat(messages: list[dict], tools: list[dict] | None,
                 errors.append(f"{url} ({m}): skipped, {size} chars is too large for a backstop")
                 log.warning("LLM backend %s model %s skipped — request too large (%d chars)",
                             url, m, size)
+                continue
+            if not await wol.ensure_awake_async(url):
+                # the host sleeps and WOL_HOSTS knows it: the magic packet went out, but
+                # the service did not come up in time — fall back as if it were down
+                errors.append(f"{url} ({m}): asleep, did not wake")
+                log.warning("LLM backend %s is asleep and did not wake — trying next", url)
                 continue
             try:
                 return await _post_chat(url, m, messages, tools, fmt)

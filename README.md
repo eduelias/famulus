@@ -82,6 +82,23 @@ Failover is fast: the connect timeout is 5s (`LLM_CONNECT_TIMEOUT`), because a
 *sleeping* host silently drops packets rather than refusing the connection and
 would otherwise stall for the full read timeout.
 
+If the GPU box *sleeps* to save power, let famulus wake it instead of settling
+for the backstop: list the host with its MAC address and famulus sends a
+Wake-on-LAN magic packet before the first request that finds it down, then
+waits up to `WOL_WAIT` seconds (60) for Ollama to answer:
+
+```bash
+WOL_HOSTS=192.168.1.50=30:9c:23:b4:9b:55      # ip=mac, comma-separated
+```
+
+The host is woken at most once every `WOL_COOLDOWN` seconds (180); hosts not
+listed are never touched. The packet goes unicast to the IP and as a LAN
+broadcast; from a Docker bridge network only the unicast gets out, so the box
+must be in the Docker host's ARP table (a sleeping NIC answers ARP, a hibernated
+one may not: add a permanent neighbour entry on the host in that case). The
+same helper (`famulus.wol`) is used by plugins with their own backends, e.g.
+the tutor's drafting and prep models.
+
 The fallback model still needs tool-calling support to use plugins. Small
 models choose tools less reliably than big ones — measured on a Raspberry Pi 5
 (CPU only): `qwen3:1.7b` ≈ 7 tok/s and emits valid tool calls, while
