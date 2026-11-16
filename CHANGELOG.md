@@ -8,6 +8,8 @@ pushing the tag tests, publishes and deploys it to du7 (`deploy/README.md`).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-16
+
 ### Added
 
 - Wake-on-LAN for backends on a machine that sleeps: list it in `WOL_HOSTS` (`ip=mac`) and
@@ -33,5 +35,6 @@ pushing the tag tests, publishes and deploys it to du7 (`deploy/README.md`).
 - A turn that failed mid-way (no LLM backend, or any agent error) left its half-finished
   tool rounds in the conversation history; the whole turn is dropped now.
 
-[Unreleased]: https://github.com/eduelias/famulus/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/eduelias/famulus/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/eduelias/famulus/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/eduelias/famulus/releases/tag/v0.3.0
